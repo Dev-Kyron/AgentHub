@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
+import logo from "./assets/logo.png";
 
 /* ---------- ICON HELPER ---------- */
-
 function getFavicon(url) {
   try {
     const domain = new URL(url).origin;
@@ -12,7 +12,6 @@ function getFavicon(url) {
 }
 
 /* ---------- SECTION ---------- */
-
 function Section({ title }) {
   const storageKey = `tools-${title}`;
 
@@ -70,8 +69,6 @@ function Section({ title }) {
     setTools(tools.filter((_, i) => i !== index));
   };
 
-  /* ---------- DRAG ---------- */
-
   const handleDragStart = (index) => setDragIndex(index);
 
   const handleDrop = (index) => {
@@ -101,9 +98,7 @@ function Section({ title }) {
             onDrop={() => handleDrop(index)}
             className="bg-zinc-800 p-3 rounded-lg flex justify-between items-start gap-3 cursor-move"
           >
-            {/* LEFT */}
             <div className="flex gap-3 items-start">
-              {/* ICON */}
               <img
                 src={getFavicon(tool.url)}
                 alt=""
@@ -127,7 +122,6 @@ function Section({ title }) {
               </div>
             </div>
 
-            {/* RIGHT */}
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => openEdit(index)}
@@ -178,16 +172,10 @@ function Section({ title }) {
             />
 
             <div className="flex gap-2">
-              <button
-                onClick={saveTool}
-                className="flex-1 bg-purple-700 py-2 rounded"
-              >
+              <button onClick={saveTool} className="flex-1 bg-purple-700 py-2 rounded">
                 Save
               </button>
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 bg-zinc-700 py-2 rounded"
-              >
+              <button onClick={() => setShowModal(false)} className="flex-1 bg-zinc-700 py-2 rounded">
                 Cancel
               </button>
             </div>
@@ -199,12 +187,8 @@ function Section({ title }) {
 }
 
 /* ---------- APP ---------- */
-
 export default function App() {
-  const [notes, setNotes] = useState(() => {
-    return localStorage.getItem("notes") || "";
-  });
-
+  const [notes, setNotes] = useState(() => localStorage.getItem("notes") || "");
   const [time, setTime] = useState(new Date());
 
   const [selectedDay, setSelectedDay] = useState(null);
@@ -213,6 +197,10 @@ export default function App() {
   });
 
   const [newItem, setNewItem] = useState("");
+
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
 
   useEffect(() => {
     localStorage.setItem("notes", notes);
@@ -226,6 +214,32 @@ export default function App() {
     const interval = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const getExportData = () => {
+    return JSON.stringify({
+      sod: localStorage.getItem("tools-Start of Day"),
+      md: localStorage.getItem("tools-Main Day"),
+      eod: localStorage.getItem("tools-End of Day"),
+      notes,
+      schedule
+    }, null, 2);
+  };
+
+  const handleImport = () => {
+    try {
+      const data = JSON.parse(importText);
+
+      localStorage.setItem("tools-Start of Day", data.sod);
+      localStorage.setItem("tools-Main Day", data.md);
+      localStorage.setItem("tools-End of Day", data.eod);
+      localStorage.setItem("notes", data.notes);
+      localStorage.setItem("schedule", JSON.stringify(data.schedule));
+
+      location.reload();
+    } catch {
+      alert("Invalid data");
+    }
+  };
 
   const addScheduleItem = () => {
     if (!newItem || !selectedDay) return;
@@ -250,19 +264,34 @@ export default function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-10 flex gap-8">
 
+      {/* LEFT */}
       <div className="flex-1">
 
-        {/* LOGO */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
-            🎧
+        {/* 🔥 HEADER WITH YOUR LOGO */}
+        <div className="flex justify-between items-center mb-8">
+
+          <div className="flex items-center gap-4 group">
+            <img
+              src={logo}
+              alt="AgentHub Logo"
+              className="w-10 h-10 object-contain transition group-hover:scale-110 drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]"
+            />
+
+            <h1 className="text-3xl font-bold tracking-tight">
+              <span className="bg-gradient-to-r from-purple-400 to-purple-700 bg-clip-text text-transparent">
+                AgentHub
+              </span>
+            </h1>
           </div>
 
-          <h1 className="text-3xl font-bold">
-            <span className="bg-gradient-to-r from-purple-400 to-purple-700 bg-clip-text text-transparent">
-              AgentHub
-            </span>
-          </h1>
+          <div className="flex gap-2">
+            <button onClick={() => setShowExport(true)} className="bg-zinc-800 px-3 py-1 rounded">
+              Export
+            </button>
+            <button onClick={() => setShowImport(true)} className="bg-zinc-800 px-3 py-1 rounded">
+              Import
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-6">
@@ -272,7 +301,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* RIGHT SIDE */}
+      {/* RIGHT */}
       <div className="w-80 flex flex-col h-[calc(100vh-80px)]">
 
         <div className="bg-zinc-900 p-4 rounded-xl flex flex-col flex-1">
@@ -285,17 +314,13 @@ export default function App() {
         </div>
 
         <div className="mt-4 bg-zinc-900 p-4 rounded-xl">
-          <div className="text-center mb-2">
-            {time.toLocaleTimeString()}
-          </div>
+          <div className="text-center mb-2">{time.toLocaleTimeString()}</div>
 
           <div className="flex justify-between text-sm mb-3">
             {days.map((day, i) => (
               <div
                 key={i}
-                onClick={() =>
-                  setSelectedDay(selectedDay === day ? null : day)
-                }
+                onClick={() => setSelectedDay(selectedDay === day ? null : day)}
                 className={`flex-1 text-center py-1 rounded cursor-pointer ${
                   selectedDay === day
                     ? "bg-purple-700"
@@ -331,8 +356,42 @@ export default function App() {
             </div>
           )}
         </div>
-
       </div>
+
+      {/* EXPORT MODAL */}
+      {showExport && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
+          <div className="bg-zinc-900 p-6 rounded-xl w-[400px]">
+            <textarea value={getExportData()} readOnly className="w-full h-40 bg-zinc-800 p-2 rounded text-xs" />
+            <button onClick={() => navigator.clipboard.writeText(getExportData())} className="mt-3 w-full bg-purple-700 py-2 rounded">
+              Copy
+            </button>
+            <button onClick={() => setShowExport(false)} className="mt-2 w-full bg-zinc-700 py-2 rounded">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT MODAL */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
+          <div className="bg-zinc-900 p-6 rounded-xl w-[400px]">
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              className="w-full h-40 bg-zinc-800 p-2 rounded text-xs"
+            />
+            <button onClick={handleImport} className="mt-3 w-full bg-purple-700 py-2 rounded">
+              Import
+            </button>
+            <button onClick={() => setShowImport(false)} className="mt-2 w-full bg-zinc-700 py-2 rounded">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
