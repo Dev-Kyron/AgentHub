@@ -5,15 +5,12 @@ import bgOrange from "./assets/bg_orange.png";
 
 /* ─────────────────────────────────────────────
    STORAGE MIGRATION
-   Old keys used human-readable titles; new keys
-   use stable IDs so renaming never loses data.
 ───────────────────────────────────────────── */
 const SECTION_DEFS = [
   { id: "sod", defaultTitle: "Start of Day", legacyKey: "tools-Start of Day" },
   { id: "md",  defaultTitle: "Main Day",     legacyKey: "tools-Main Day"     },
   { id: "eod", defaultTitle: "End of Day",   legacyKey: "tools-End of Day"   },
 ];
-
 (function migrateStorage() {
   SECTION_DEFS.forEach(({ id, legacyKey }) => {
     const newKey = `tools-${id}`;
@@ -25,11 +22,7 @@ const SECTION_DEFS = [
 })();
 
 /* ─────────────────────────────────────────────
-   CALENDAR HELPERS
-   Rolling 7-day strip anchored to today.
-   Schedule keyed by ISO date "YYYY-MM-DD" so
-   items are tied to a real calendar date, not
-   a repeating weekday name.
+   CALENDAR HELPERS  — rolling 7-day real dates
 ───────────────────────────────────────────── */
 function getDateKey(date) {
   const y = date.getFullYear();
@@ -37,183 +30,177 @@ function getDateKey(date) {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
-
 function getRollingWeek() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    return d;
+    const d = new Date(today); d.setDate(today.getDate() + i); return d;
   });
 }
-
 const DAY_ABBR = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /* ─────────────────────────────────────────────
-   THEMES
-   hueRotate: CSS hue-rotate degrees on bg.png.
-   grayscale: 0–1  (B&W = 1).
-   bg: "orange" → swap to bg_orange.png, no filter.
-   Orange is listed first and is the default.
+   ENCODE / DECODE
+   Two-layer compression:
+     1. Short property names (pack/unpack) shave
+        ~40% off the raw JSON before compression.
+     2. CompressionStream("deflate-raw") shrinks
+        the result a further ~40–50%.
+     3. Base64url (no padding, URL-safe chars).
+   Falls back to plain base64 if the browser
+   doesn't support CompressionStream (rare).
+───────────────────────────────────────────── */
+function packData(d) {
+  return { s: d.sod, m: d.md, e: d.eod, t: d.titles, n: d.notes, c: d.schedule, x: d.themeId };
+}
+function unpackData(p) {
+  return {
+    sod:      p.s ?? p.sod      ?? [],
+    md:       p.m ?? p.md       ?? [],
+    eod:      p.e ?? p.eod      ?? [],
+    titles:   p.t ?? p.titles   ?? null,
+    notes:    p.n ?? p.notes    ?? "",
+    schedule: p.c ?? p.schedule ?? {},
+    themeId:  p.x ?? p.themeId  ?? "orange",
+  };
+}
+
+async function encodeData(data) {
+  const json  = JSON.stringify(packData(data));
+  try {
+    const bytes  = new TextEncoder().encode(json);
+    const cs     = new CompressionStream("deflate-raw");
+    const writer = cs.writable.getWriter();
+    writer.write(bytes); writer.close();
+    const buf = await new Response(cs.readable).arrayBuffer();
+    // base64url — no padding, URL-safe
+    return btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  } catch {
+    // fallback for browsers without CompressionStream
+    return btoa(unescape(encodeURIComponent(json))).replace(/=/g, "");
+  }
+}
+
+async function decodeData(input) {
+  const raw  = input.includes("#key=") ? input.split("#key=").pop().trim() : input.trim();
+  // restore base64url → standard base64
+  const b64  = raw.replace(/-/g, "+").replace(/_/g, "/");
+  const pad  = (4 - (b64.length % 4)) % 4;
+  const b64p = b64 + "=".repeat(pad);
+  // try decompress first
+  try {
+    const bytes  = Uint8Array.from(atob(b64p), (c) => c.charCodeAt(0));
+    const ds     = new DecompressionStream("deflate-raw");
+    const writer = ds.writable.getWriter();
+    writer.write(bytes); writer.close();
+    const buf  = await new Response(ds.readable).arrayBuffer();
+    const json = new TextDecoder().decode(buf);
+    return unpackData(JSON.parse(json));
+  } catch {
+    // plain base64 fallback (old codes)
+    try { return unpackData(JSON.parse(decodeURIComponent(escape(atob(b64p))))); }
+    catch { return null; }
+  }
+}
+
+function buildShareUrl(key) {
+  return `${window.location.origin}${window.location.pathname}#key=${key}`;
+}
+
+/* ─────────────────────────────────────────────
+   THEMES  — orange first / default
 ───────────────────────────────────────────── */
 const THEMES = [
   {
     id: "orange", name: "Orange", hex: "#e85d04",
     hueRotate: 0, grayscale: 0, bg: "orange",
     vars: {
-      "--brand":            "#e85d04",
-      "--brand-light":      "#fb8c00",
-      "--brand-dim":        "#7c2d00",
-      "--brand-glow":       "rgba(232,93,4,0.60)",
-      "--brand-ring":       "rgba(251,140,0,0.85)",
-      "--brand-border":     "rgba(232,93,4,0.45)",
-      "--brand-bg":         "rgba(232,93,4,0.10)",
-      "--brand-hover-bg":   "rgba(232,93,4,0.22)",
-      "--text-primary":     "#fed7aa",
-      "--text-secondary":   "rgba(253,186,116,0.75)",
-      "--text-muted":       "rgba(253,186,116,0.45)",
-      "--card-border":      "rgba(194,65,12,0.40)",
-      "--card-bg":          "rgba(0,0,0,0.42)",
-      "--overlay":          "rgba(10,3,0,0.42)",
-      "--btn-primary-bg":   "rgba(194,65,12,0.72)",
-      "--btn-primary-hover":"rgba(234,88,12,0.88)",
+      "--brand": "#e85d04", "--brand-light": "#fb8c00", "--brand-dim": "#7c2d00",
+      "--brand-glow": "rgba(232,93,4,0.60)", "--brand-ring": "rgba(251,140,0,0.85)",
+      "--brand-border": "rgba(232,93,4,0.45)", "--brand-bg": "rgba(232,93,4,0.10)",
+      "--brand-hover-bg": "rgba(232,93,4,0.22)", "--text-primary": "#fed7aa",
+      "--text-secondary": "rgba(253,186,116,0.75)", "--text-muted": "rgba(253,186,116,0.45)",
+      "--card-border": "rgba(194,65,12,0.40)", "--card-bg": "rgba(0,0,0,0.42)",
+      "--overlay": "rgba(10,3,0,0.42)", "--btn-primary-bg": "rgba(194,65,12,0.72)",
+      "--btn-primary-hover": "rgba(234,88,12,0.88)",
     },
   },
   {
     id: "purple", name: "Purple", hex: "#7c3aed",
     hueRotate: 0, grayscale: 0, bg: null,
     vars: {
-      "--brand":            "#7c3aed",
-      "--brand-light":      "#a78bfa",
-      "--brand-dim":        "#4c1d95",
-      "--brand-glow":       "rgba(124,58,237,0.55)",
-      "--brand-ring":       "rgba(168,85,247,0.8)",
-      "--brand-border":     "rgba(124,58,237,0.4)",
-      "--brand-bg":         "rgba(124,58,237,0.08)",
-      "--brand-hover-bg":   "rgba(124,58,237,0.18)",
-      "--text-primary":     "#e9d5ff",
-      "--text-secondary":   "rgba(216,180,254,0.7)",
-      "--text-muted":       "rgba(196,167,255,0.45)",
-      "--card-border":      "rgba(109,40,217,0.35)",
-      "--card-bg":          "rgba(0,0,0,0.40)",
-      "--overlay":          "rgba(0,0,0,0.38)",
-      "--btn-primary-bg":   "rgba(109,40,217,0.70)",
-      "--btn-primary-hover":"rgba(124,58,237,0.85)",
+      "--brand": "#7c3aed", "--brand-light": "#a78bfa", "--brand-dim": "#4c1d95",
+      "--brand-glow": "rgba(124,58,237,0.55)", "--brand-ring": "rgba(168,85,247,0.8)",
+      "--brand-border": "rgba(124,58,237,0.4)", "--brand-bg": "rgba(124,58,237,0.08)",
+      "--brand-hover-bg": "rgba(124,58,237,0.18)", "--text-primary": "#e9d5ff",
+      "--text-secondary": "rgba(216,180,254,0.7)", "--text-muted": "rgba(196,167,255,0.45)",
+      "--card-border": "rgba(109,40,217,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,0,0,0.38)", "--btn-primary-bg": "rgba(109,40,217,0.70)",
+      "--btn-primary-hover": "rgba(124,58,237,0.85)",
     },
   },
   {
     id: "blue", name: "Blue", hex: "#1a56c4",
     hueRotate: 175, grayscale: 0, bg: null,
     vars: {
-      "--brand":            "#1a56c4",
-      "--brand-light":      "#60a5fa",
-      "--brand-dim":        "#1e3a8a",
-      "--brand-glow":       "rgba(26,86,196,0.55)",
-      "--brand-ring":       "rgba(59,130,246,0.8)",
-      "--brand-border":     "rgba(26,86,196,0.4)",
-      "--brand-bg":         "rgba(26,86,196,0.08)",
-      "--brand-hover-bg":   "rgba(26,86,196,0.18)",
-      "--text-primary":     "#bfdbfe",
-      "--text-secondary":   "rgba(147,197,253,0.7)",
-      "--text-muted":       "rgba(147,197,253,0.45)",
-      "--card-border":      "rgba(30,64,175,0.35)",
-      "--card-bg":          "rgba(0,0,0,0.40)",
-      "--overlay":          "rgba(0,0,10,0.40)",
-      "--btn-primary-bg":   "rgba(30,64,175,0.70)",
-      "--btn-primary-hover":"rgba(26,86,196,0.85)",
+      "--brand": "#1a56c4", "--brand-light": "#60a5fa", "--brand-dim": "#1e3a8a",
+      "--brand-glow": "rgba(26,86,196,0.55)", "--brand-ring": "rgba(59,130,246,0.8)",
+      "--brand-border": "rgba(26,86,196,0.4)", "--brand-bg": "rgba(26,86,196,0.08)",
+      "--brand-hover-bg": "rgba(26,86,196,0.18)", "--text-primary": "#bfdbfe",
+      "--text-secondary": "rgba(147,197,253,0.7)", "--text-muted": "rgba(147,197,253,0.45)",
+      "--card-border": "rgba(30,64,175,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,0,10,0.40)", "--btn-primary-bg": "rgba(30,64,175,0.70)",
+      "--btn-primary-hover": "rgba(26,86,196,0.85)",
     },
   },
   {
     id: "red", name: "Red", hex: "#dc2626",
     hueRotate: 130, grayscale: 0, bg: null,
     vars: {
-      "--brand":            "#dc2626",
-      "--brand-light":      "#f87171",
-      "--brand-dim":        "#7f1d1d",
-      "--brand-glow":       "rgba(220,38,38,0.55)",
-      "--brand-ring":       "rgba(248,113,113,0.8)",
-      "--brand-border":     "rgba(220,38,38,0.4)",
-      "--brand-bg":         "rgba(220,38,38,0.08)",
-      "--brand-hover-bg":   "rgba(220,38,38,0.18)",
-      "--text-primary":     "#fecaca",
-      "--text-secondary":   "rgba(252,165,165,0.7)",
-      "--text-muted":       "rgba(252,165,165,0.45)",
-      "--card-border":      "rgba(185,28,28,0.35)",
-      "--card-bg":          "rgba(0,0,0,0.40)",
-      "--overlay":          "rgba(10,0,0,0.40)",
-      "--btn-primary-bg":   "rgba(185,28,28,0.70)",
-      "--btn-primary-hover":"rgba(220,38,38,0.85)",
+      "--brand": "#dc2626", "--brand-light": "#f87171", "--brand-dim": "#7f1d1d",
+      "--brand-glow": "rgba(220,38,38,0.55)", "--brand-ring": "rgba(248,113,113,0.8)",
+      "--brand-border": "rgba(220,38,38,0.4)", "--brand-bg": "rgba(220,38,38,0.08)",
+      "--brand-hover-bg": "rgba(220,38,38,0.18)", "--text-primary": "#fecaca",
+      "--text-secondary": "rgba(252,165,165,0.7)", "--text-muted": "rgba(252,165,165,0.45)",
+      "--card-border": "rgba(185,28,28,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(10,0,0,0.40)", "--btn-primary-bg": "rgba(185,28,28,0.70)",
+      "--btn-primary-hover": "rgba(220,38,38,0.85)",
     },
   },
   {
     id: "pink", name: "Pink", hex: "#db2777",
     hueRotate: 315, grayscale: 0, bg: null,
     vars: {
-      "--brand":            "#db2777",
-      "--brand-light":      "#f472b6",
-      "--brand-dim":        "#831843",
-      "--brand-glow":       "rgba(219,39,119,0.55)",
-      "--brand-ring":       "rgba(244,114,182,0.8)",
-      "--brand-border":     "rgba(219,39,119,0.4)",
-      "--brand-bg":         "rgba(219,39,119,0.08)",
-      "--brand-hover-bg":   "rgba(219,39,119,0.18)",
-      "--text-primary":     "#fbcfe8",
-      "--text-secondary":   "rgba(249,168,212,0.7)",
-      "--text-muted":       "rgba(249,168,212,0.45)",
-      "--card-border":      "rgba(190,24,93,0.35)",
-      "--card-bg":          "rgba(0,0,0,0.40)",
-      "--overlay":          "rgba(8,0,4,0.40)",
-      "--btn-primary-bg":   "rgba(190,24,93,0.70)",
-      "--btn-primary-hover":"rgba(219,39,119,0.85)",
+      "--brand": "#db2777", "--brand-light": "#f472b6", "--brand-dim": "#831843",
+      "--brand-glow": "rgba(219,39,119,0.55)", "--brand-ring": "rgba(244,114,182,0.8)",
+      "--brand-border": "rgba(219,39,119,0.4)", "--brand-bg": "rgba(219,39,119,0.08)",
+      "--brand-hover-bg": "rgba(219,39,119,0.18)", "--text-primary": "#fbcfe8",
+      "--text-secondary": "rgba(249,168,212,0.7)", "--text-muted": "rgba(249,168,212,0.45)",
+      "--card-border": "rgba(190,24,93,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(8,0,4,0.40)", "--btn-primary-bg": "rgba(190,24,93,0.70)",
+      "--btn-primary-hover": "rgba(219,39,119,0.85)",
     },
   },
   {
     id: "bw", name: "B & W", hex: "#6b7280",
     hueRotate: 0, grayscale: 1, bg: null,
     vars: {
-      "--brand":            "#9ca3af",
-      "--brand-light":      "#e5e7eb",
-      "--brand-dim":        "#374151",
-      "--brand-glow":       "rgba(156,163,175,0.40)",
-      "--brand-ring":       "rgba(209,213,219,0.7)",
-      "--brand-border":     "rgba(107,114,128,0.35)",
-      "--brand-bg":         "rgba(255,255,255,0.05)",
-      "--brand-hover-bg":   "rgba(255,255,255,0.12)",
-      "--text-primary":     "#f3f4f6",
-      "--text-secondary":   "rgba(209,213,219,0.70)",
-      "--text-muted":       "rgba(156,163,175,0.50)",
-      "--card-border":      "rgba(75,85,99,0.40)",
-      "--card-bg":          "rgba(0,0,0,0.45)",
-      "--overlay":          "rgba(0,0,0,0.42)",
-      "--btn-primary-bg":   "rgba(55,65,81,0.72)",
-      "--btn-primary-hover":"rgba(75,85,99,0.88)",
+      "--brand": "#9ca3af", "--brand-light": "#e5e7eb", "--brand-dim": "#374151",
+      "--brand-glow": "rgba(156,163,175,0.40)", "--brand-ring": "rgba(209,213,219,0.7)",
+      "--brand-border": "rgba(107,114,128,0.35)", "--brand-bg": "rgba(255,255,255,0.05)",
+      "--brand-hover-bg": "rgba(255,255,255,0.12)", "--text-primary": "#f3f4f6",
+      "--text-secondary": "rgba(209,213,219,0.70)", "--text-muted": "rgba(156,163,175,0.50)",
+      "--card-border": "rgba(75,85,99,0.40)", "--card-bg": "rgba(0,0,0,0.45)",
+      "--overlay": "rgba(0,0,0,0.42)", "--btn-primary-bg": "rgba(55,65,81,0.72)",
+      "--btn-primary-hover": "rgba(75,85,99,0.88)",
     },
   },
 ];
 
 function applyTheme(theme) {
-  const root = document.documentElement;
-  Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
-}
-
-/* ─────────────────────────────────────────────
-   DATA ENCODE / DECODE  (short key for sharing)
-───────────────────────────────────────────── */
-function encodeData(data) {
-  try { return btoa(unescape(encodeURIComponent(JSON.stringify(data)))); }
-  catch { return ""; }
-}
-
-function decodeData(input) {
-  try {
-    const key = input.includes("#key=") ? input.split("#key=").pop() : input.trim();
-    return JSON.parse(decodeURIComponent(escape(atob(key))));
-  } catch { return null; }
-}
-
-function buildShareUrl(data) {
-  return `${window.location.origin}${window.location.pathname}#key=${encodeData(data)}`;
+  Object.entries(theme.vars).forEach(([k, v]) =>
+    document.documentElement.style.setProperty(k, v)
+  );
 }
 
 /* ─────────────────────────────────────────────
@@ -224,7 +211,7 @@ function getFavicon(url) {
 }
 
 /* ─────────────────────────────────────────────
-   SHARED STYLE TOKENS
+   STYLE TOKENS
 ───────────────────────────────────────────── */
 const glass       = "bg-[--card-bg] backdrop-blur-md border border-[--card-border] shadow-lg shadow-black/40";
 const btnPrimary  = "bg-[--btn-primary-bg] hover:bg-[--btn-primary-hover] border border-[--brand-border] transition";
@@ -238,13 +225,11 @@ function ThemePicker({ themeId, setThemeId }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const current = THEMES.find((t) => t.id === themeId) ?? THEMES[0];
-
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button onClick={() => setOpen((o) => !o)}
@@ -285,45 +270,32 @@ const TOUR_STEPS = [
   { id: "main-day",     title: "💼 Main Day",              body: "Your core tools — CRM, knowledge base, dashboards. These stay open across every call.", position: "bottom", align: "center" },
   { id: "end-of-day",   title: "🌙 End of Day",            body: "Wrap-up tools — reporting, time tracking, anything you close before logging off.", position: "bottom", align: "right" },
   { id: "boot-btn",     title: "⚡ Boot Up My Day",        body: "One click opens every tool in Start of Day and Main Day as new tabs — your shift launch pad.", position: "top", align: "left" },
-  { id: "notes",        title: "📋 Scripts & Notes",       body: "Paste call scripts, talking points or shift notes here. Saves automatically — always there when you need it.", position: "left", align: "center" },
+  { id: "notes",        title: "📋 Scripts & Notes",       body: "A persistent scratchpad for call scripts, talking points or shift notes. Saves automatically.", position: "left", align: "center" },
   { id: "scheduler",    title: "📅 Shift Scheduler",       body: "Shows today + the next 6 days with real dates. Click any date to add reminders or follow-ups. A dot appears when a day has items.", position: "left", align: "center" },
-  { id: "share-btn",    title: "🔗 Share / Backup",        body: "Copy a short code or URL to back up your setup — or hand your entire tool config to a new starter in seconds.", position: "bottom", align: "right" },
+  { id: "share-btn",    title: "🔗 Share / Backup",        body: "Generates a short compressed code — paste it on any machine to restore your full setup instantly.", position: "bottom", align: "right" },
   { id: "tour-btn",     title: "🎉 That's everything!",    body: "Replay this tour any time with the ? button. Happy hustling!", position: "bottom", align: "right" },
 ];
 
 function TourTooltip({ step, stepIndex, total, onNext, onPrev, onClose, targetRef }) {
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const tipRef = useRef(null);
-
   useEffect(() => {
     if (!targetRef?.current) return;
     const update = () => {
-      const r   = targetRef.current.getBoundingClientRect();
-      const tH  = tipRef.current?.offsetHeight || 160;
-      const tW  = tipRef.current?.offsetWidth  || 300;
-      const gap = 14;
-      const a   = step.align || "center";
+      const r = targetRef.current.getBoundingClientRect();
+      const tH = tipRef.current?.offsetHeight || 160, tW = tipRef.current?.offsetWidth || 300, gap = 14;
+      const a = step.align || "center";
       let top, left;
-      if (step.position === "bottom") {
-        top  = r.bottom + gap;
-        left = a === "left" ? r.left : a === "right" ? r.right - tW : r.left + r.width / 2 - tW / 2;
-      } else if (step.position === "top") {
-        top  = r.top - tH - gap;
-        left = a === "left" ? r.left : a === "right" ? r.right - tW : r.left + r.width / 2 - tW / 2;
-      } else if (step.position === "left") {
-        left = r.left - tW - gap; top = r.top + r.height / 2 - tH / 2;
-      } else {
-        left = r.right + gap; top = r.top + r.height / 2 - tH / 2;
-      }
-      left = Math.max(10, Math.min(left, window.innerWidth  - tW - 10));
+      if      (step.position === "bottom") { top = r.bottom + gap; left = a === "left" ? r.left : a === "right" ? r.right - tW : r.left + r.width / 2 - tW / 2; }
+      else if (step.position === "top")    { top = r.top - tH - gap; left = a === "left" ? r.left : a === "right" ? r.right - tW : r.left + r.width / 2 - tW / 2; }
+      else if (step.position === "left")   { left = r.left - tW - gap; top = r.top + r.height / 2 - tH / 2; }
+      else                                 { left = r.right + gap; top = r.top + r.height / 2 - tH / 2; }
+      left = Math.max(10, Math.min(left, window.innerWidth - tW - 10));
       top  = Math.max(10, Math.min(top,  window.innerHeight - tH - 10));
       setCoords({ top, left });
     };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    update(); window.addEventListener("resize", update); return () => window.removeEventListener("resize", update);
   }, [step, targetRef]);
-
   return (
     <div ref={tipRef} style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 1000, width: 300 }}
       className="bg-black/90 backdrop-blur-xl border border-[--brand-border] rounded-2xl p-5 shadow-2xl shadow-black/60">
@@ -399,7 +371,7 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
     else setTools([...tools, t]);
     setShowModal(false);
   };
-  const deleteTool    = (i, e) => { e.stopPropagation(); setTools(tools.filter((_, idx) => idx !== i)); };
+  const deleteTool      = (i, e) => { e.stopPropagation(); setTools(tools.filter((_, idx) => idx !== i)); };
   const handleDragStart = (e, i) => { setDragIndex(i); e.dataTransfer.effectAllowed = "move"; };
   const handleDragOver  = (e, i) => { e.preventDefault(); setDragOver(i); };
   const handleDrop      = (i) => {
@@ -418,8 +390,7 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
       <div className="flex items-center gap-1.5 mb-4 group flex-shrink-0 min-w-0">
         {editingTitle ? (
           <input ref={titleInputRef} value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={commitTitle}
+            onChange={(e) => setTitleDraft(e.target.value)} onBlur={commitTitle}
             onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") { setTitleDraft(title); setEditingTitle(false); } }}
             className="flex-1 bg-transparent border-b border-[--brand] text-[--text-primary] text-sm font-semibold tracking-widest uppercase focus:outline-none py-0.5 min-w-0" />
         ) : (
@@ -460,8 +431,8 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
                   className="flex items-center justify-center px-2 py-3 cursor-grab active:cursor-grabbing text-[--text-muted] hover:text-[--text-secondary] transition flex-shrink-0 self-stretch rounded-l-xl select-none"
                   style={{ touchAction: "none" }}>
                   <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
-                    <circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/>
-                    <circle cx="2.5" cy="8"   r="1.5"/><circle cx="7.5" cy="8"   r="1.5"/>
+                    <circle cx="2.5" cy="2.5"  r="1.5"/><circle cx="7.5" cy="2.5"  r="1.5"/>
+                    <circle cx="2.5" cy="8"    r="1.5"/><circle cx="7.5" cy="8"    r="1.5"/>
                     <circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/>
                   </svg>
                 </div>
@@ -519,35 +490,48 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
 
 /* ─────────────────────────────────────────────
    SHARE MODAL
+   encodeData is async so the key is generated
+   once on mount and shown with a char-count.
 ───────────────────────────────────────────── */
 function ShareModal({ getExportData, onClose }) {
   const [mode,       setMode]       = useState("export");
   const [importText, setImportText] = useState("");
   const [copied,     setCopied]     = useState("");
-  const data     = getExportData();
-  const key      = encodeData(data);
-  const shareUrl = buildShareUrl(data);
+  const [key,        setKey]        = useState("");
+  const [shareUrl,   setShareUrl]   = useState("");
+  const [generating, setGenerating] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const k = await encodeData(getExportData());
+      setKey(k);
+      setShareUrl(buildShareUrl(k));
+      setGenerating(false);
+    })();
+  }, []);
+
   const copy = (text, label) => {
     navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(""), 2000);
+    setCopied(label); setTimeout(() => setCopied(""), 2000);
   };
-  const handleImport = () => {
-    const parsed = decodeData(importText);
+
+  const handleImport = async () => {
+    const parsed = await decodeData(importText);
     if (!parsed) { alert("Invalid code or URL — please check and try again."); return; }
-    const safe = (v) => Array.isArray(v) ? JSON.stringify(v) : typeof v === "string" ? v : null;
-    if (parsed.sod      !== undefined) localStorage.setItem("tools-sod",      safe(parsed.sod)  ?? "[]");
-    if (parsed.md       !== undefined) localStorage.setItem("tools-md",       safe(parsed.md)   ?? "[]");
-    if (parsed.eod      !== undefined) localStorage.setItem("tools-eod",      safe(parsed.eod)  ?? "[]");
-    if (parsed.notes    !== undefined) localStorage.setItem("notes",          parsed.notes      ?? "");
+    if (parsed.sod      !== undefined) localStorage.setItem("tools-sod",      JSON.stringify(parsed.sod));
+    if (parsed.md       !== undefined) localStorage.setItem("tools-md",       JSON.stringify(parsed.md));
+    if (parsed.eod      !== undefined) localStorage.setItem("tools-eod",      JSON.stringify(parsed.eod));
+    if (parsed.notes    !== undefined) localStorage.setItem("notes",          parsed.notes ?? "");
     if (parsed.schedule !== undefined) localStorage.setItem("schedule",       JSON.stringify(parsed.schedule ?? {}));
     if (parsed.titles   !== undefined) localStorage.setItem("section-titles", JSON.stringify(parsed.titles));
     if (parsed.themeId  !== undefined) localStorage.setItem("themeId",        parsed.themeId);
     location.reload();
   };
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30">
       <div className={`${glass} p-6 rounded-2xl w-[380px]`}>
+        {/* Tab toggle */}
         <div className="flex rounded-xl overflow-hidden border border-[--card-border] mb-5">
           {["export", "import"].map((m) => (
             <button key={m} onClick={() => setMode(m)}
@@ -556,22 +540,43 @@ function ShareModal({ getExportData, onClose }) {
             </button>
           ))}
         </div>
+
         {mode === "export" ? (
           <div className="space-y-3">
-            <p className="text-[--text-muted] text-xs">Copy your backup code, or share a URL to restore on any machine — great for onboarding new starters.</p>
+            <p className="text-[--text-muted] text-xs">
+              Compressed backup code — paste it on any machine to restore your full setup. Great for onboarding new starters.
+            </p>
             <div>
-              <label className="text-[--text-muted] text-xs uppercase tracking-widest block mb-1">Backup Code</label>
-              <div className="flex gap-2">
-                <input readOnly value={key} onClick={(e) => e.target.select()}
-                  className="flex-1 bg-white/5 border border-[--card-border] rounded-lg px-2.5 py-2 text-xs text-[--text-secondary] focus:outline-none font-mono truncate" />
-                <button onClick={() => copy(key, "code")} className={`${btnPrimary} px-3 py-2 rounded-lg text-xs font-medium text-white flex-shrink-0`}>
-                  {copied === "code" ? "✓ Copied" : "Copy"}
-                </button>
+              {/* Label row with live char count */}
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[--text-muted] text-xs uppercase tracking-widest">Backup Code</label>
+                {!generating && (
+                  <span className="text-[10px] text-[--text-muted] opacity-60 tabular-nums">{key.length} chars</span>
+                )}
               </div>
+
+              {generating ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-white/5 border border-[--card-border] rounded-lg">
+                  <div className="w-3 h-3 border-2 border-white/20 border-t-[--brand-light] rounded-full animate-spin flex-shrink-0" />
+                  <span className="text-xs text-[--text-muted]">Compressing…</span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input readOnly value={key} onClick={(e) => e.target.select()}
+                    className="flex-1 bg-white/5 border border-[--card-border] rounded-lg px-2.5 py-2 text-xs text-[--text-secondary] focus:outline-none font-mono truncate" />
+                  <button onClick={() => copy(key, "code")}
+                    className={`${btnPrimary} px-3 py-2 rounded-lg text-xs font-medium text-white flex-shrink-0`}>
+                    {copied === "code" ? "✓" : "Copy"}
+                  </button>
+                </div>
+              )}
             </div>
-            <button onClick={() => copy(shareUrl, "url")}
-              className={`w-full ${btnGhost} py-2.5 rounded-xl text-sm text-[--text-primary] flex items-center justify-center gap-2`}>
-              <span>🔗</span><span>{copied === "url" ? "✓ URL Copied!" : "Copy Share URL"}</span>
+
+            <button
+              onClick={() => !generating && copy(shareUrl, "url")}
+              className={`w-full ${btnGhost} py-2.5 rounded-xl text-sm text-[--text-primary] flex items-center justify-center gap-2 ${generating ? "opacity-40 cursor-wait" : ""}`}>
+              <span>🔗</span>
+              <span>{copied === "url" ? "✓ URL Copied!" : "Copy Share URL"}</span>
             </button>
           </div>
         ) : (
@@ -580,10 +585,17 @@ function ShareModal({ getExportData, onClose }) {
             <textarea value={importText} onChange={(e) => setImportText(e.target.value)}
               placeholder="Paste code or share URL here…" rows={4}
               className="w-full bg-white/5 border border-[--card-border] rounded-lg px-3 py-2 text-xs text-[--text-secondary] placeholder-[--text-muted] focus:outline-none focus:border-[--brand] resize-none font-mono" />
-            <button onClick={handleImport} className={`w-full ${btnPrimary} py-2.5 rounded-xl font-medium text-white`}>Import & Reload</button>
+            <button onClick={handleImport}
+              className={`w-full ${btnPrimary} py-2.5 rounded-xl font-medium text-white`}>
+              Import & Reload
+            </button>
           </div>
         )}
-        <button onClick={onClose} className={`mt-3 w-full ${btnGhost} py-2 rounded-xl text-[--text-primary] text-sm`}>Close</button>
+
+        <button onClick={onClose}
+          className={`mt-3 w-full ${btnGhost} py-2 rounded-xl text-[--text-primary] text-sm`}>
+          Close
+        </button>
       </div>
     </div>
   );
@@ -591,10 +603,6 @@ function ShareModal({ getExportData, onClose }) {
 
 /* ─────────────────────────────────────────────
    SHIFT SCHEDULER
-   Self-contained component. Rolling 7-day strip
-   with real calendar dates. Items stored by
-   ISO date key so nothing ever gets lost or
-   confused with a different week's same weekday.
 ───────────────────────────────────────────── */
 function ShiftScheduler({ tourRef, highlighted }) {
   const [schedule,    setSchedule]    = useState(() => JSON.parse(localStorage.getItem("schedule")) || {});
@@ -610,36 +618,29 @@ function ShiftScheduler({ tourRef, highlighted }) {
     return () => clearInterval(t);
   }, []);
 
-  const addItem = () => {
+  const addItem    = () => {
     if (!newItem.trim() || !selectedKey) return;
-    const u = { ...schedule, [selectedKey]: [...(schedule[selectedKey] || []), newItem.trim()] };
-    setSchedule(u); setNewItem("");
+    setSchedule({ ...schedule, [selectedKey]: [...(schedule[selectedKey] || []), newItem.trim()] });
+    setNewItem("");
   };
-  const deleteItem = (i) => {
-    const u = { ...schedule, [selectedKey]: schedule[selectedKey].filter((_, idx) => idx !== i) };
-    setSchedule(u);
-  };
+  const deleteItem = (i) =>
+    setSchedule({ ...schedule, [selectedKey]: schedule[selectedKey].filter((_, idx) => idx !== i) });
 
   const selectedItems = selectedKey ? (schedule[selectedKey] || []) : [];
 
   return (
-    <div
-      ref={tourRef}
+    <div ref={tourRef}
       style={highlighted ? { zIndex: 60, position: "relative" } : {}}
-      className={`${glass} p-4 rounded-2xl flex-shrink-0 transition-all duration-300 ${highlighted ? tourRingCls : ""}`}
-    >
-      {/* Live clock */}
+      className={`${glass} p-4 rounded-2xl flex-shrink-0 transition-all duration-300 ${highlighted ? tourRingCls : ""}`}>
+
       <div className="text-center font-mono text-base mb-1"
         style={{ color: "var(--text-primary)", filter: "drop-shadow(0 0 8px var(--brand-glow))" }}>
         {time.toLocaleTimeString()}
       </div>
-
-      {/* Month + year label */}
       <div className="text-center text-[--text-muted] text-xs mb-2 tracking-wide">
         {new Date().toLocaleDateString("en-AU", { month: "long", year: "numeric" })}
       </div>
 
-      {/* Rolling 7-day strip */}
       <div className="grid grid-cols-7 gap-1 mb-2">
         {week.map((date) => {
           const key        = getDateKey(date);
@@ -651,23 +652,18 @@ function ShiftScheduler({ tourRef, highlighted }) {
               onClick={() => setSelectedKey(isSelected ? null : key)}
               className="flex flex-col items-center py-1.5 rounded-lg cursor-pointer transition-all select-none"
               style={
-                isSelected
-                  ? { background: "var(--brand)", boxShadow: "0 0 8px var(--brand-glow)" }
-                  : isToday
-                  ? { background: "var(--brand-dim)", border: "1px solid var(--brand-border)" }
-                  : { background: "rgba(255,255,255,0.05)" }
+                isSelected  ? { background: "var(--brand)", boxShadow: "0 0 8px var(--brand-glow)" }
+                : isToday   ? { background: "var(--brand-dim)", border: "1px solid var(--brand-border)" }
+                : { background: "rgba(255,255,255,0.05)" }
               }>
-              {/* Day abbr */}
               <span className="text-[10px] font-semibold leading-none"
                 style={{ color: isSelected ? "#fff" : "var(--text-muted)" }}>
                 {DAY_ABBR[date.getDay()]}
               </span>
-              {/* Date number */}
               <span className="text-sm font-bold leading-tight mt-0.5"
                 style={{ color: isSelected ? "#fff" : isToday ? "var(--text-primary)" : "var(--text-secondary)" }}>
                 {date.getDate()}
               </span>
-              {/* Activity dot */}
               <div className="mt-0.5 h-1 w-1 rounded-full"
                 style={{ background: hasItems ? (isSelected ? "rgba(255,255,255,0.9)" : "var(--brand-light)") : "transparent" }} />
             </div>
@@ -675,24 +671,20 @@ function ShiftScheduler({ tourRef, highlighted }) {
         })}
       </div>
 
-      {/* Selected date task list */}
       {selectedKey && (
         <div className="space-y-1.5 mt-2">
           <div className="text-[--text-muted] text-xs font-semibold uppercase tracking-widest mb-1">
             {new Date(selectedKey + "T00:00:00").toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" })}
           </div>
-
           {selectedItems.length === 0 && (
             <p className="text-[--text-muted] text-xs italic py-1 px-0.5">No items yet — add one below.</p>
           )}
-
           {selectedItems.map((item, i) => (
             <div key={i} className="flex justify-between bg-white/5 border border-[--card-border] p-2 rounded-lg text-xs">
               <span className="text-[--text-primary] truncate pr-2">{item}</span>
               <button onClick={() => deleteItem(i)} className="text-red-400 hover:text-red-300 transition flex-shrink-0 text-xs">✕</button>
             </div>
           ))}
-
           <div className="flex gap-1 pt-0.5">
             <input value={newItem} onChange={(e) => setNewItem(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addItem()}
@@ -721,14 +713,13 @@ export default function App() {
       return saved && saved.length === 3 ? saved : SECTION_DEFS.map((s) => s.defaultTitle);
     } catch { return SECTION_DEFS.map((s) => s.defaultTitle); }
   });
-
   const updateTitle = (index, newTitle) => {
     const updated = sectionTitles.map((t, i) => (i === index ? newTitle : t));
     setSectionTitles(updated);
     localStorage.setItem("section-titles", JSON.stringify(updated));
   };
 
-  // Theme — default orange to match AustralianSuper brand
+  // Theme — default orange
   const [themeId, setThemeId] = useState(() => localStorage.getItem("themeId") || "orange");
   const theme = THEMES.find((t) => t.id === themeId) ?? THEMES[0];
   useEffect(() => { applyTheme(theme); }, [theme]);
@@ -738,7 +729,7 @@ export default function App() {
     ? "none"
     : `hue-rotate(${theme.hueRotate}deg) saturate(${theme.grayscale ? 0 : 1.1}) ${theme.grayscale ? "grayscale(1)" : ""}`.trim();
 
-  // Detect share URL on load
+  // Detect share URL in hash
   useEffect(() => {
     if (window.location.hash.startsWith("#key=")) {
       setShowShare(true);
@@ -811,7 +802,9 @@ export default function App() {
         transition: "filter 0.4s ease",
       }} />
       <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 1, transition: "background 0.35s ease" }} />
-      {tourActive && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.48)", zIndex: 50, pointerEvents: "none" }} />}
+      {tourActive && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.48)", zIndex: 50, pointerEvents: "none" }} />
+      )}
 
       {/* Main grid */}
       <div className="text-white" style={{
@@ -882,10 +875,11 @@ export default function App() {
               <h2 className="text-[--text-muted] font-semibold text-sm uppercase tracking-widest">Scripts & Notes</h2>
               <span className="text-[10px] text-[--text-muted] opacity-50">auto-saved</span>
             </div>
+            {/* ── placeholder kept minimal — title is self-explanatory ── */}
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder={"Paste call scripts, talking points\nor shift notes here…"}
+              placeholder="Note down…"
               className="bg-white/5 border border-[--card-border] p-2 rounded-xl flex-1 text-sm text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand] resize-none min-h-0 leading-relaxed"
             />
           </div>
@@ -902,7 +896,7 @@ export default function App() {
         ⚡ Boot Up My Day
       </button>
 
-      {showShare  && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
+      {showShare && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
 
       {tourActive && (
         <TourTooltip step={currentStep} stepIndex={tourStep} total={TOUR_STEPS.length}
