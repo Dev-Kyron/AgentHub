@@ -1155,6 +1155,11 @@ export default function App() {
       {showShare     && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
       {showBootEmpty && <BootEmptyModal onClose={() => setShowBootEmpty(false)} />}
 
+      {/* Copyright */}
+      <p className="fixed bottom-2 right-4 text-[10px] text-white/20 select-none" style={{ zIndex: 10 }}>
+        © 2026 Kyron (Dev_Kyron) · All Rights Reserved
+      </p>
+
       {tourActive && (
         <TourTooltip step={currentStep} stepIndex={tourStep} total={TOUR_STEPS.length}
           onNext={nextStep} onPrev={prevStep} onClose={endTour} targetRef={currentStepRef} />
