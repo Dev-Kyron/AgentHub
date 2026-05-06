@@ -40,6 +40,21 @@ AgentHub brings everything into a single customizable workspace, organized aroun
 
 ---
 
+## Getting Started
+
+```bash
+git clone https://github.com/Dev-Kyron/AgentHub.git
+cd AgentHub
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+> No backend, no login, no environment variables required. Everything saves to your browser's local storage automatically.
+
+---
+
 ## Purpose
 
 Built to solve a real-world problem observed in a call centre environment. Agents rely on too many disconnected systems — AgentHub reduces that friction by:
