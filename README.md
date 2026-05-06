@@ -42,6 +42,16 @@ AgentHub brings everything into a single customizable workspace, organized aroun
 
 ## Getting Started
 
+**Use it instantly — no install required:**
+
+[![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub-ecru-five.vercel.app)
+
+> No backend, no login, no environment variables required. Everything saves to your browser's local storage automatically.
+
+---
+
+### Run Locally
+
 ```bash
 git clone https://github.com/Dev-Kyron/AgentHub.git
 cd AgentHub
@@ -50,8 +60,6 @@ npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-> No backend, no login, no environment variables required. Everything saves to your browser's local storage automatically.
 
 ---
 
