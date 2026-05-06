@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import logo from "./assets/logo.png";
 import bg from "./assets/bg.png";
 import bgOrange from "./assets/bg_orange.png";
+import bgCctx from "./assets/CCTX_Blue.png";
 
 /* ─────────────────────────────────────────────
    STORAGE MIGRATION
@@ -36,18 +37,21 @@ function getRollingWeek() {
     const d = new Date(today); d.setDate(today.getDate() + i); return d;
   });
 }
-const DAY_ABBR = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+function dateFromKey(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function formatDate(date) {
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAY_ABBR  = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /* ─────────────────────────────────────────────
    ENCODE / DECODE
-   Two-layer compression:
-     1. Short property names (pack/unpack) shave
-        ~40% off the raw JSON before compression.
-     2. CompressionStream("deflate-raw") shrinks
-        the result a further ~40–50%.
-     3. Base64url (no padding, URL-safe chars).
-   Falls back to plain base64 if the browser
-   doesn't support CompressionStream (rare).
 ───────────────────────────────────────────── */
 function packData(d) {
   return { s: d.sod, m: d.md, e: d.eod, t: d.titles, n: d.notes, c: d.schedule, x: d.themeId };
@@ -60,7 +64,7 @@ function unpackData(p) {
     titles:   p.t ?? p.titles   ?? null,
     notes:    p.n ?? p.notes    ?? "",
     schedule: p.c ?? p.schedule ?? {},
-    themeId:  p.x ?? p.themeId  ?? "orange",
+    themeId:  p.x ?? p.themeId  ?? "concentrix",
   };
 }
 
@@ -72,22 +76,18 @@ async function encodeData(data) {
     const writer = cs.writable.getWriter();
     writer.write(bytes); writer.close();
     const buf = await new Response(cs.readable).arrayBuffer();
-    // base64url — no padding, URL-safe
     return btoa(String.fromCharCode(...new Uint8Array(buf)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
   } catch {
-    // fallback for browsers without CompressionStream
     return btoa(unescape(encodeURIComponent(json))).replace(/=/g, "");
   }
 }
 
 async function decodeData(input) {
   const raw  = input.includes("#key=") ? input.split("#key=").pop().trim() : input.trim();
-  // restore base64url → standard base64
   const b64  = raw.replace(/-/g, "+").replace(/_/g, "/");
   const pad  = (4 - (b64.length % 4)) % 4;
   const b64p = b64 + "=".repeat(pad);
-  // try decompress first
   try {
     const bytes  = Uint8Array.from(atob(b64p), (c) => c.charCodeAt(0));
     const ds     = new DecompressionStream("deflate-raw");
@@ -97,7 +97,6 @@ async function decodeData(input) {
     const json = new TextDecoder().decode(buf);
     return unpackData(JSON.parse(json));
   } catch {
-    // plain base64 fallback (old codes)
     try { return unpackData(JSON.parse(decodeURIComponent(escape(atob(b64p))))); }
     catch { return null; }
   }
@@ -108,9 +107,63 @@ function buildShareUrl(key) {
 }
 
 /* ─────────────────────────────────────────────
-   THEMES  — orange first / default
+   AUTO-SNAPSHOT
+   Saves a plain JSON copy of all user data to
+   "agenthub_snapshot". Runs on mount, every 60s,
+   and on page unload. Because it stores raw strings
+   (already-serialised localStorage values) it
+   survives any future compression format changes.
+───────────────────────────────────────────── */
+const SNAPSHOT_KEY = "agenthub_snapshot";
+
+function saveSnapshot() {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({
+      sod:    localStorage.getItem("tools-sod"),
+      md:     localStorage.getItem("tools-md"),
+      eod:    localStorage.getItem("tools-eod"),
+      notes:  localStorage.getItem("notes"),
+      sched:  localStorage.getItem("schedule"),
+      titles: localStorage.getItem("section-titles"),
+      theme:  localStorage.getItem("themeId"),
+      at:     Date.now(),
+    }));
+  } catch { /* storage full — silently skip */ }
+}
+
+function readSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY)); } catch { return null; }
+}
+
+function restoreSnapshot(snap) {
+  if (snap.sod)    localStorage.setItem("tools-sod",      snap.sod);
+  if (snap.md)     localStorage.setItem("tools-md",       snap.md);
+  if (snap.eod)    localStorage.setItem("tools-eod",      snap.eod);
+  if (snap.notes !== null) localStorage.setItem("notes",  snap.notes ?? "");
+  if (snap.sched)  localStorage.setItem("schedule",       snap.sched);
+  if (snap.titles) localStorage.setItem("section-titles", snap.titles);
+  if (snap.theme)  localStorage.setItem("themeId",        snap.theme);
+  location.reload();
+}
+
+/* ─────────────────────────────────────────────
+   THEMES
 ───────────────────────────────────────────── */
 const THEMES = [
+  {
+    id: "concentrix", name: "Cyan", hex: "#1D50A0",
+    hueRotate: 0, grayscale: 0, bg: "cyan",
+    vars: {
+      "--brand": "#1D50A0", "--brand-light": "#5b8dd9", "--brand-dim": "#0a1f3d",
+      "--brand-glow": "rgba(29,80,160,0.60)", "--brand-ring": "rgba(91,141,217,0.85)",
+      "--brand-border": "rgba(29,80,160,0.45)", "--brand-bg": "rgba(29,80,160,0.10)",
+      "--brand-hover-bg": "rgba(29,80,160,0.22)", "--text-primary": "#bfdbfe",
+      "--text-secondary": "rgba(147,197,253,0.75)", "--text-muted": "rgba(147,197,253,0.45)",
+      "--card-border": "rgba(29,80,160,0.40)", "--card-bg": "rgba(0,0,0,0.42)",
+      "--overlay": "rgba(0,3,12,0.45)", "--btn-primary-bg": "rgba(15,52,120,0.72)",
+      "--btn-primary-hover": "rgba(29,80,160,0.88)",
+    },
+  },
   {
     id: "orange", name: "Orange", hex: "#e85d04",
     hueRotate: 0, grayscale: 0, bg: "orange",
@@ -195,6 +248,119 @@ const THEMES = [
       "--btn-primary-hover": "rgba(75,85,99,0.88)",
     },
   },
+  /* ── New themes ── */
+  {
+    id: "green", name: "Green", hex: "#16a34a",
+    hueRotate: 90, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#16a34a", "--brand-light": "#4ade80", "--brand-dim": "#14532d",
+      "--brand-glow": "rgba(22,163,74,0.55)", "--brand-ring": "rgba(74,222,128,0.8)",
+      "--brand-border": "rgba(22,163,74,0.4)", "--brand-bg": "rgba(22,163,74,0.08)",
+      "--brand-hover-bg": "rgba(22,163,74,0.18)", "--text-primary": "#bbf7d0",
+      "--text-secondary": "rgba(134,239,172,0.7)", "--text-muted": "rgba(134,239,172,0.45)",
+      "--card-border": "rgba(21,128,61,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,5,0,0.40)", "--btn-primary-bg": "rgba(21,128,61,0.70)",
+      "--btn-primary-hover": "rgba(22,163,74,0.85)",
+    },
+  },
+  {
+    id: "teal", name: "Teal", hex: "#0d9488",
+    hueRotate: 155, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#0d9488", "--brand-light": "#2dd4bf", "--brand-dim": "#134e4a",
+      "--brand-glow": "rgba(13,148,136,0.55)", "--brand-ring": "rgba(45,212,191,0.8)",
+      "--brand-border": "rgba(13,148,136,0.4)", "--brand-bg": "rgba(13,148,136,0.08)",
+      "--brand-hover-bg": "rgba(13,148,136,0.18)", "--text-primary": "#99f6e4",
+      "--text-secondary": "rgba(153,246,228,0.7)", "--text-muted": "rgba(153,246,228,0.45)",
+      "--card-border": "rgba(15,118,110,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,4,4,0.40)", "--btn-primary-bg": "rgba(15,118,110,0.70)",
+      "--btn-primary-hover": "rgba(13,148,136,0.85)",
+    },
+  },
+  {
+    id: "sky", name: "Sky", hex: "#0284c7",
+    hueRotate: 170, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#0284c7", "--brand-light": "#38bdf8", "--brand-dim": "#0c4a6e",
+      "--brand-glow": "rgba(2,132,199,0.55)", "--brand-ring": "rgba(56,189,248,0.8)",
+      "--brand-border": "rgba(2,132,199,0.4)", "--brand-bg": "rgba(2,132,199,0.08)",
+      "--brand-hover-bg": "rgba(2,132,199,0.18)", "--text-primary": "#bae6fd",
+      "--text-secondary": "rgba(186,230,253,0.7)", "--text-muted": "rgba(186,230,253,0.45)",
+      "--card-border": "rgba(3,105,161,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,2,8,0.40)", "--btn-primary-bg": "rgba(3,105,161,0.70)",
+      "--btn-primary-hover": "rgba(2,132,199,0.85)",
+    },
+  },
+  {
+    id: "amber", name: "Amber", hex: "#d97706",
+    hueRotate: 25, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#d97706", "--brand-light": "#fcd34d", "--brand-dim": "#78350f",
+      "--brand-glow": "rgba(217,119,6,0.55)", "--brand-ring": "rgba(252,211,77,0.8)",
+      "--brand-border": "rgba(217,119,6,0.4)", "--brand-bg": "rgba(217,119,6,0.08)",
+      "--brand-hover-bg": "rgba(217,119,6,0.18)", "--text-primary": "#fef3c7",
+      "--text-secondary": "rgba(253,230,138,0.7)", "--text-muted": "rgba(253,230,138,0.45)",
+      "--card-border": "rgba(180,83,9,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(6,3,0,0.40)", "--btn-primary-bg": "rgba(180,83,9,0.70)",
+      "--btn-primary-hover": "rgba(217,119,6,0.85)",
+    },
+  },
+  {
+    id: "indigo", name: "Indigo", hex: "#4338ca",
+    hueRotate: 195, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#4338ca", "--brand-light": "#818cf8", "--brand-dim": "#1e1b4b",
+      "--brand-glow": "rgba(67,56,202,0.55)", "--brand-ring": "rgba(129,140,248,0.8)",
+      "--brand-border": "rgba(67,56,202,0.4)", "--brand-bg": "rgba(67,56,202,0.08)",
+      "--brand-hover-bg": "rgba(67,56,202,0.18)", "--text-primary": "#e0e7ff",
+      "--text-secondary": "rgba(199,210,254,0.7)", "--text-muted": "rgba(199,210,254,0.45)",
+      "--card-border": "rgba(55,48,163,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(0,0,8,0.40)", "--btn-primary-bg": "rgba(55,48,163,0.70)",
+      "--btn-primary-hover": "rgba(67,56,202,0.85)",
+    },
+  },
+  {
+    id: "lime", name: "Lime", hex: "#65a30d",
+    hueRotate: 65, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#65a30d", "--brand-light": "#a3e635", "--brand-dim": "#365314",
+      "--brand-glow": "rgba(101,163,13,0.55)", "--brand-ring": "rgba(163,230,53,0.8)",
+      "--brand-border": "rgba(101,163,13,0.4)", "--brand-bg": "rgba(101,163,13,0.08)",
+      "--brand-hover-bg": "rgba(101,163,13,0.18)", "--text-primary": "#ecfccb",
+      "--text-secondary": "rgba(217,249,157,0.7)", "--text-muted": "rgba(217,249,157,0.45)",
+      "--card-border": "rgba(77,124,15,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(1,4,0,0.40)", "--btn-primary-bg": "rgba(77,124,15,0.70)",
+      "--btn-primary-hover": "rgba(101,163,13,0.85)",
+    },
+  },
+  {
+    id: "rose", name: "Rose", hex: "#e11d48",
+    hueRotate: 140, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#e11d48", "--brand-light": "#fb7185", "--brand-dim": "#881337",
+      "--brand-glow": "rgba(225,29,72,0.55)", "--brand-ring": "rgba(251,113,133,0.8)",
+      "--brand-border": "rgba(225,29,72,0.4)", "--brand-bg": "rgba(225,29,72,0.08)",
+      "--brand-hover-bg": "rgba(225,29,72,0.18)", "--text-primary": "#ffe4e6",
+      "--text-secondary": "rgba(254,205,211,0.7)", "--text-muted": "rgba(254,205,211,0.45)",
+      "--card-border": "rgba(190,18,60,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(8,0,2,0.40)", "--btn-primary-bg": "rgba(190,18,60,0.70)",
+      "--btn-primary-hover": "rgba(225,29,72,0.85)",
+    },
+  },
+  {
+    id: "violet", name: "Violet", hex: "#7c3aed",
+    hueRotate: 210, grayscale: 0, bg: null,
+    vars: {
+      "--brand": "#6d28d9", "--brand-light": "#c4b5fd", "--brand-dim": "#2e1065",
+      "--brand-glow": "rgba(109,40,217,0.55)", "--brand-ring": "rgba(196,181,253,0.8)",
+      "--brand-border": "rgba(109,40,217,0.4)", "--brand-bg": "rgba(109,40,217,0.08)",
+      "--brand-hover-bg": "rgba(109,40,217,0.18)", "--text-primary": "#ede9fe",
+      "--text-secondary": "rgba(221,214,254,0.7)", "--text-muted": "rgba(221,214,254,0.45)",
+      "--card-border": "rgba(91,33,182,0.35)", "--card-bg": "rgba(0,0,0,0.40)",
+      "--overlay": "rgba(2,0,8,0.40)", "--btn-primary-bg": "rgba(91,33,182,0.70)",
+      "--btn-primary-hover": "rgba(109,40,217,0.85)",
+    },
+  },
 ];
 
 function applyTheme(theme) {
@@ -219,6 +385,21 @@ const btnGhost    = "bg-white/10 hover:bg-white/20 backdrop-blur border border-[
 const tourRingCls = "ring-2 ring-[--brand-ring] ring-offset-1 ring-offset-black/10 shadow-[0_0_18px_var(--brand-glow)]";
 
 /* ─────────────────────────────────────────────
+   FAVICON ICON — handles load failure cleanly
+───────────────────────────────────────────── */
+function FaviconIcon({ url }) {
+  const [failed, setFailed] = useState(false);
+  const src = getFavicon(url);
+  if (!src || failed) {
+    return <div className="w-4 h-4 rounded flex-shrink-0" style={{ background: "var(--brand-dim)" }} />;
+  }
+  return (
+    <img src={src} alt="" className="w-4 h-4 rounded flex-shrink-0"
+      onError={() => setFailed(true)} />
+  );
+}
+
+/* ─────────────────────────────────────────────
    THEME PICKER
 ───────────────────────────────────────────── */
 function ThemePicker({ themeId, setThemeId }) {
@@ -239,18 +420,18 @@ function ThemePicker({ themeId, setThemeId }) {
         <span style={{ fontSize: 9, opacity: 0.6 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div className={`${glass} absolute top-full right-0 mt-2 p-3 rounded-2xl`} style={{ width: 212, zIndex: 100 }}>
+        <div className={`${glass} absolute top-full right-0 mt-2 p-3 rounded-2xl`} style={{ width: 240, zIndex: 100 }}>
           <div className="text-[--text-muted] text-xs font-semibold uppercase tracking-widest mb-2 px-1">Brand Colour</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
             {THEMES.map((t) => (
               <button key={t.id}
                 onClick={() => { setThemeId(t.id); localStorage.setItem("themeId", t.id); setOpen(false); }}
-                className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition ${
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition ${
                   themeId === t.id
                     ? "bg-[--brand-hover-bg] border border-[--brand-ring] text-[--text-primary]"
                     : "bg-[--brand-bg] hover:bg-[--brand-hover-bg] border border-transparent text-[--text-secondary]"
                 }`}>
-                <span style={{ width: 10, height: 10, borderRadius: "50%", background: t.hex, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.hex, display: "inline-block", flexShrink: 0 }} />
                 {t.name}
               </button>
             ))}
@@ -271,7 +452,7 @@ const TOUR_STEPS = [
   { id: "end-of-day",   title: "🌙 End of Day",            body: "Wrap-up tools — reporting, time tracking, anything you close before logging off.", position: "bottom", align: "right" },
   { id: "boot-btn",     title: "⚡ Boot Up My Day",        body: "One click opens every tool in Start of Day and Main Day as new tabs — your shift launch pad.", position: "top", align: "left" },
   { id: "notes",        title: "📋 Scripts & Notes",       body: "A persistent scratchpad for call scripts, talking points or shift notes. Saves automatically.", position: "left", align: "center" },
-  { id: "scheduler",    title: "📅 Shift Scheduler",       body: "Shows today + the next 6 days with real dates. Click any date to add reminders or follow-ups. A dot appears when a day has items.", position: "left", align: "center" },
+  { id: "scheduler",    title: "📅 Shift Scheduler",       body: "Shows today + the next 6 days with real dates. Click any date to add reminders or follow-ups. Drag items to reorder them.", position: "left", align: "center" },
   { id: "share-btn",    title: "🔗 Share / Backup",        body: "Generates a short compressed code — paste it on any machine to restore your full setup instantly.", position: "bottom", align: "right" },
   { id: "tour-btn",     title: "🎉 That's everything!",    body: "Replay this tour any time with the ? button. Happy hustling!", position: "bottom", align: "right" },
 ];
@@ -330,6 +511,31 @@ function PencilIcon() {
     <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
       <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm-.646 6.061L9.293 2.5 3.5 8.293V9.5h1.207l5.5-5.5-.5-.5zM1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/>
     </svg>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   BOOT EMPTY MODAL
+───────────────────────────────────────────── */
+function BootEmptyModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30">
+      <div className={`${glass} p-7 rounded-2xl w-[340px] text-center space-y-4`}>
+        <div className="text-4xl">⚡</div>
+        <h3 className="text-[--text-primary] font-bold text-base">Nothing to launch yet</h3>
+        <p className="text-[--text-secondary] text-sm leading-relaxed">
+          Add at least one tool to your{" "}
+          <span className="text-[--text-primary] font-semibold">Start of Day</span> or{" "}
+          <span className="text-[--text-primary] font-semibold">Main Day</span>{" "}
+          column first — then Boot Up My Day will open them all in one click.
+        </p>
+        <button onClick={onClose}
+          className={`w-full ${btnPrimary} py-2.5 rounded-xl font-semibold text-[--text-primary]`}
+          style={{ boxShadow: "0 0 14px var(--brand-glow)" }}>
+          Got it
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -417,46 +623,41 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
-          {tools.map((tool, index) => {
-            const favicon = getFavicon(tool.url);
-            return (
-              <div key={index}
-                onDragOver={(e) => handleDragOver(e, index)}
-                onDrop={() => handleDrop(index)}
-                onDragEnd={handleDragEnd}
-                className={`bg-white/5 hover:bg-[--brand-bg] border rounded-xl flex items-start gap-0 transition ${
-                  dragOver === index && dragIndex !== index ? "border-[--brand-light] bg-[--brand-hover-bg]" : "border-[--card-border]"
-                }`}>
-                <div draggable onDragStart={(e) => handleDragStart(e, index)}
-                  className="flex items-center justify-center px-2 py-3 cursor-grab active:cursor-grabbing text-[--text-muted] hover:text-[--text-secondary] transition flex-shrink-0 self-stretch rounded-l-xl select-none"
-                  style={{ touchAction: "none" }}>
-                  <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
-                    <circle cx="2.5" cy="2.5"  r="1.5"/><circle cx="7.5" cy="2.5"  r="1.5"/>
-                    <circle cx="2.5" cy="8"    r="1.5"/><circle cx="7.5" cy="8"    r="1.5"/>
-                    <circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/>
-                  </svg>
+          {tools.map((tool, index) => (
+            <div key={index}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={() => handleDrop(index)}
+              onDragEnd={handleDragEnd}
+              className={`bg-white/5 hover:bg-[--brand-bg] border rounded-xl flex items-start gap-0 transition ${
+                dragOver === index && dragIndex !== index ? "border-[--brand-light] bg-[--brand-hover-bg]" : "border-[--card-border]"
+              }`}>
+              <div draggable onDragStart={(e) => handleDragStart(e, index)}
+                className="flex items-center justify-center px-2 py-3 cursor-grab active:cursor-grabbing text-[--text-muted] hover:text-[--text-secondary] transition flex-shrink-0 self-stretch rounded-l-xl select-none"
+                style={{ touchAction: "none" }}>
+                <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+                  <circle cx="2.5" cy="2.5"  r="1.5"/><circle cx="7.5" cy="2.5"  r="1.5"/>
+                  <circle cx="2.5" cy="8"    r="1.5"/><circle cx="7.5" cy="8"    r="1.5"/>
+                  <circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/>
+                </svg>
+              </div>
+              <div className="flex flex-1 items-start gap-2 py-2.5 pr-2 min-w-0">
+                <div style={{ flexShrink: 0, marginTop: 2 }}>
+                  <FaviconIcon url={tool.url} />
                 </div>
-                <div className="flex flex-1 items-start gap-2 py-2.5 pr-2 min-w-0">
-                  <div style={{ flexShrink: 0, marginTop: 2 }}>
-                    {favicon
-                      ? <img src={favicon} alt="" className="w-4 h-4 rounded" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                      : <div className="w-4 h-4 rounded bg-[--brand-dim]" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <a href={tool.url} target="_blank" rel="noopener noreferrer"
-                      className="text-[--text-primary] hover:text-white font-medium text-sm transition truncate block">
-                      {tool.name}
-                    </a>
-                    {tool.desc && <div className="text-xs text-[--text-muted] mt-0.5 truncate">{tool.desc}</div>}
-                  </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0">
-                    <button onClick={(e) => openEdit(index, e)} className={`text-xs ${btnPrimary} px-2 py-0.5 rounded text-[--text-primary]`}>Edit</button>
-                    <button onClick={(e) => deleteTool(index, e)} className="text-xs bg-red-900/50 hover:bg-red-800/60 border border-red-700/40 px-2 py-0.5 rounded transition">Delete</button>
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <a href={tool.url} target="_blank" rel="noopener noreferrer"
+                    className="text-[--text-primary] hover:text-white font-medium text-sm transition truncate block">
+                    {tool.name}
+                  </a>
+                  {tool.desc && <div className="text-xs text-[--text-muted] mt-0.5 truncate">{tool.desc}</div>}
+                </div>
+                <div className="flex flex-col gap-1 flex-shrink-0">
+                  <button onClick={(e) => openEdit(index, e)} className={`text-xs ${btnPrimary} px-2 py-0.5 rounded text-[--text-primary]`}>Edit</button>
+                  <button onClick={(e) => deleteTool(index, e)} className="text-xs bg-red-900/50 hover:bg-red-800/60 border border-red-700/40 px-2 py-0.5 rounded transition">Delete</button>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -490,8 +691,6 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
 
 /* ─────────────────────────────────────────────
    SHARE MODAL
-   encodeData is async so the key is generated
-   once on mount and shown with a char-count.
 ───────────────────────────────────────────── */
 function ShareModal({ getExportData, onClose }) {
   const [mode,       setMode]       = useState("export");
@@ -500,6 +699,8 @@ function ShareModal({ getExportData, onClose }) {
   const [key,        setKey]        = useState("");
   const [shareUrl,   setShareUrl]   = useState("");
   const [generating, setGenerating] = useState(true);
+  const snapshot = readSnapshot();
+  const snapshotAge = snapshot ? Math.round((Date.now() - snapshot.at) / 60000) : null;
 
   useEffect(() => {
     (async () => {
@@ -531,7 +732,6 @@ function ShareModal({ getExportData, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30">
       <div className={`${glass} p-6 rounded-2xl w-[380px]`}>
-        {/* Tab toggle */}
         <div className="flex rounded-xl overflow-hidden border border-[--card-border] mb-5">
           {["export", "import"].map((m) => (
             <button key={m} onClick={() => setMode(m)}
@@ -547,14 +747,12 @@ function ShareModal({ getExportData, onClose }) {
               Compressed backup code — paste it on any machine to restore your full setup. Great for onboarding new starters.
             </p>
             <div>
-              {/* Label row with live char count */}
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[--text-muted] text-xs uppercase tracking-widest">Backup Code</label>
                 {!generating && (
                   <span className="text-[10px] text-[--text-muted] opacity-60 tabular-nums">{key.length} chars</span>
                 )}
               </div>
-
               {generating ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-white/5 border border-[--card-border] rounded-lg">
                   <div className="w-3 h-3 border-2 border-white/20 border-t-[--brand-light] rounded-full animate-spin flex-shrink-0" />
@@ -571,7 +769,6 @@ function ShareModal({ getExportData, onClose }) {
                 </div>
               )}
             </div>
-
             <button
               onClick={() => !generating && copy(shareUrl, "url")}
               className={`w-full ${btnGhost} py-2.5 rounded-xl text-sm text-[--text-primary] flex items-center justify-center gap-2 ${generating ? "opacity-40 cursor-wait" : ""}`}>
@@ -589,6 +786,23 @@ function ShareModal({ getExportData, onClose }) {
               className={`w-full ${btnPrimary} py-2.5 rounded-xl font-medium text-white`}>
               Import & Reload
             </button>
+            {snapshot && (
+              <div className={`${glass} rounded-xl p-3 space-y-2`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🛡️</span>
+                  <div>
+                    <p className="text-[--text-primary] text-xs font-semibold">Auto-backup available</p>
+                    <p className="text-[--text-muted] text-[10px]">
+                      Saved {snapshotAge === 0 ? "just now" : `${snapshotAge} min${snapshotAge !== 1 ? "s" : ""} ago`}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => restoreSnapshot(snapshot)}
+                  className={`w-full ${btnGhost} py-2 rounded-lg text-xs text-[--text-primary] font-medium`}>
+                  Restore Auto-Backup
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -609,6 +823,8 @@ function ShiftScheduler({ tourRef, highlighted }) {
   const [selectedKey, setSelectedKey] = useState(null);
   const [newItem,     setNewItem]     = useState("");
   const [time,        setTime]        = useState(new Date());
+  const [calDragIndex, setCalDragIndex] = useState(null);
+  const [calDragOver,  setCalDragOver]  = useState(null);
   const week     = getRollingWeek();
   const todayKey = getDateKey(new Date());
 
@@ -618,13 +834,32 @@ function ShiftScheduler({ tourRef, highlighted }) {
     return () => clearInterval(t);
   }, []);
 
-  const addItem    = () => {
+  const addItem = () => {
     if (!newItem.trim() || !selectedKey) return;
     setSchedule({ ...schedule, [selectedKey]: [...(schedule[selectedKey] || []), newItem.trim()] });
     setNewItem("");
   };
   const deleteItem = (i) =>
     setSchedule({ ...schedule, [selectedKey]: schedule[selectedKey].filter((_, idx) => idx !== i) });
+
+  const handleCalDragStart = (e, i) => {
+    setCalDragIndex(i);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleCalDragOver = (e, i) => {
+    e.preventDefault();
+    setCalDragOver(i);
+  };
+  const handleCalDrop = (i) => {
+    if (calDragIndex === null || calDragIndex === i) { setCalDragIndex(null); setCalDragOver(null); return; }
+    const items = [...(schedule[selectedKey] || [])];
+    const [moved] = items.splice(calDragIndex, 1);
+    items.splice(i, 0, moved);
+    setSchedule({ ...schedule, [selectedKey]: items });
+    setCalDragIndex(null);
+    setCalDragOver(null);
+  };
+  const handleCalDragEnd = () => { setCalDragIndex(null); setCalDragOver(null); };
 
   const selectedItems = selectedKey ? (schedule[selectedKey] || []) : [];
 
@@ -674,15 +909,32 @@ function ShiftScheduler({ tourRef, highlighted }) {
       {selectedKey && (
         <div className="space-y-1.5 mt-2">
           <div className="text-[--text-muted] text-xs font-semibold uppercase tracking-widest mb-1">
-            {new Date(selectedKey + "T00:00:00").toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" })}
+            {DAY_NAMES[dateFromKey(selectedKey).getDay()]} — {formatDate(dateFromKey(selectedKey))}
           </div>
           {selectedItems.length === 0 && (
             <p className="text-[--text-muted] text-xs italic py-1 px-0.5">No items yet — add one below.</p>
           )}
           {selectedItems.map((item, i) => (
-            <div key={i} className="flex justify-between bg-white/5 border border-[--card-border] p-2 rounded-lg text-xs">
-              <span className="text-[--text-primary] truncate pr-2">{item}</span>
-              <button onClick={() => deleteItem(i)} className="text-red-400 hover:text-red-300 transition flex-shrink-0 text-xs">✕</button>
+            <div key={i}
+              draggable
+              onDragStart={(e) => handleCalDragStart(e, i)}
+              onDragOver={(e) => handleCalDragOver(e, i)}
+              onDrop={() => handleCalDrop(i)}
+              onDragEnd={handleCalDragEnd}
+              className={`flex items-center gap-2 border rounded-lg text-xs transition cursor-default ${
+                calDragOver === i && calDragIndex !== i
+                  ? "border-[--brand-light] bg-[--brand-hover-bg]"
+                  : "bg-white/5 border-[--card-border]"
+              }`}>
+              <div className="px-2 py-2.5 cursor-grab active:cursor-grabbing text-[--text-muted] hover:text-[--text-secondary] transition flex-shrink-0 select-none">
+                <svg width="8" height="13" viewBox="0 0 10 16" fill="currentColor">
+                  <circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/>
+                  <circle cx="2.5" cy="8"   r="1.5"/><circle cx="7.5" cy="8"   r="1.5"/>
+                  <circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/>
+                </svg>
+              </div>
+              <span className="text-[--text-primary] truncate flex-1 py-2">{item}</span>
+              <button onClick={() => deleteItem(i)} className="text-red-400 hover:text-red-300 transition flex-shrink-0 text-xs px-2 py-2">✕</button>
             </div>
           ))}
           <div className="flex gap-1 pt-0.5">
@@ -702,10 +954,11 @@ function ShiftScheduler({ tourRef, highlighted }) {
    APP
 ───────────────────────────────────────────── */
 export default function App() {
-  const [notes,      setNotes]      = useState(() => localStorage.getItem("notes") || "");
-  const [showShare,  setShowShare]  = useState(false);
-  const [tourActive, setTourActive] = useState(false);
-  const [tourStep,   setTourStep]   = useState(0);
+  const [notes,          setNotes]          = useState(() => localStorage.getItem("notes") || "");
+  const [showShare,      setShowShare]      = useState(false);
+  const [showBootEmpty,  setShowBootEmpty]  = useState(false);
+  const [tourActive,     setTourActive]     = useState(false);
+  const [tourStep,       setTourStep]       = useState(0);
 
   const [sectionTitles, setSectionTitles] = useState(() => {
     try {
@@ -719,17 +972,15 @@ export default function App() {
     localStorage.setItem("section-titles", JSON.stringify(updated));
   };
 
-  // Theme — default orange
-  const [themeId, setThemeId] = useState(() => localStorage.getItem("themeId") || "orange");
+  const [themeId, setThemeId] = useState(() => localStorage.getItem("themeId") || "concentrix");
   const theme = THEMES.find((t) => t.id === themeId) ?? THEMES[0];
   useEffect(() => { applyTheme(theme); }, [theme]);
 
-  const bgImage  = theme.bg === "orange" ? bgOrange : bg;
-  const bgFilter = theme.bg === "orange"
+  const bgImage  = theme.bg === "orange" ? bgOrange : theme.bg === "cyan" ? bgCctx : bg;
+  const bgFilter = (theme.bg === "orange" || theme.bg === "cyan")
     ? "none"
     : `hue-rotate(${theme.hueRotate}deg) saturate(${theme.grayscale ? 0 : 1.1}) ${theme.grayscale ? "grayscale(1)" : ""}`.trim();
 
-  // Detect share URL in hash
   useEffect(() => {
     if (window.location.hash.startsWith("#key=")) {
       setShowShare(true);
@@ -737,7 +988,6 @@ export default function App() {
     }
   }, []);
 
-  // First-visit auto-tour
   useEffect(() => {
     if (!localStorage.getItem("hasVisited")) {
       localStorage.setItem("hasVisited", "1");
@@ -747,6 +997,17 @@ export default function App() {
   }, []);
 
   useEffect(() => { localStorage.setItem("notes", notes); }, [notes]);
+
+  // Auto-snapshot: save on mount, every 60s, and before unload
+  useEffect(() => {
+    saveSnapshot();
+    const interval = setInterval(saveSnapshot, 60_000);
+    window.addEventListener("beforeunload", saveSnapshot);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", saveSnapshot);
+    };
+  }, []);
 
   const refs = {
     header:         useRef(null),
@@ -787,7 +1048,7 @@ export default function App() {
     const sod  = JSON.parse(localStorage.getItem("tools-sod") || "[]");
     const md   = JSON.parse(localStorage.getItem("tools-md")  || "[]");
     const urls = [...sod, ...md].map((t) => t.url).filter(Boolean);
-    if (!urls.length) { alert("No tools found in Start of Day or Main Day!"); return; }
+    if (!urls.length) { setShowBootEmpty(true); return; }
     urls.forEach((u) => window.open(u, "_blank"));
   };
 
@@ -866,8 +1127,6 @@ export default function App() {
 
         {/* RIGHT: scripts/notes + shift scheduler */}
         <div style={{ gridRow: 2, gridColumn: 2, display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
-
-          {/* Scripts & Notes */}
           <div ref={refs.notes}
             style={isTour("notes") ? { zIndex: 60, position: "relative", flex: "1 1 0" } : { flex: "1 1 0" }}
             className={`${glass} p-4 rounded-2xl flex flex-col min-h-0 transition-all duration-300 ${isTour("notes") ? tourRingCls : ""}`}>
@@ -875,7 +1134,6 @@ export default function App() {
               <h2 className="text-[--text-muted] font-semibold text-sm uppercase tracking-widest">Scripts & Notes</h2>
               <span className="text-[10px] text-[--text-muted] opacity-50">auto-saved</span>
             </div>
-            {/* ── placeholder kept minimal — title is self-explanatory ── */}
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -883,8 +1141,6 @@ export default function App() {
               className="bg-white/5 border border-[--card-border] p-2 rounded-xl flex-1 text-sm text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand] resize-none min-h-0 leading-relaxed"
             />
           </div>
-
-          {/* Shift Scheduler */}
           <ShiftScheduler tourRef={refs.scheduler} highlighted={isTour("scheduler")} />
         </div>
       </div>
@@ -896,7 +1152,8 @@ export default function App() {
         ⚡ Boot Up My Day
       </button>
 
-      {showShare && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
+      {showShare     && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
+      {showBootEmpty && <BootEmptyModal onClose={() => setShowBootEmpty(false)} />}
 
       {tourActive && (
         <TourTooltip step={currentStep} stepIndex={tourStep} total={TOUR_STEPS.length}

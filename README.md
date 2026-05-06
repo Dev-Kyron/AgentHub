@@ -1,41 +1,75 @@
-AgentHub
+# AgentHub
 
-AgentHub is a lightweight internal productivity dashboard built to streamline the daily workflow of call centre agents.
+> A lightweight productivity dashboard built to centralize the daily workflow of call centre agents — one tab, every tool.
 
-In environments where agents rely on multiple platforms (AWS, Teams, internal knowledge bases, scheduling tools, etc.), switching between tabs can slow down performance and increase cognitive load. AgentHub solves this by providing a centralized, customizable hub for all essential tools and tasks.
+---
 
-🚀 Features
-Custom Tool Hub
-Add, edit, and remove tools per workflow stage (Start of Day, Main Day, End of Day)
-Save frequently used links in one place
-Persistent Storage
-All tools, notes, and schedules are saved locally using browser storage
-No login required
-Drag & Drop Reordering
-Easily organize tools based on priority or workflow
-Smart Tool Icons
-Automatically fetches site favicons for quick visual recognition
-Daily Notes Panel
-Persistent notes for quick reminders and task tracking
-Weekly Planner
-Clickable day system to add and manage daily tasks
-Toggle view for quick access without clutter
-🧠 Purpose
+## Core Concept
 
-This project was built to solve a real-world workflow problem observed in a call centre environment, where agents use multiple disconnected systems throughout the day.
+Call centre agents juggle multiple disconnected platforms throughout their day — AWS portals, Teams, knowledge bases, scheduling tools. Every tab switch adds friction and cognitive load.
 
-AgentHub reduces friction by:
+AgentHub brings everything into a single customizable workspace, organized around how agents actually work: start of day, through the day, end of day.
 
-Minimizing tab switching
-Improving task visibility
-Providing a personalized workspace per agent
-🛠 Tech Stack
-React (Vite)
-Tailwind CSS
-LocalStorage (client-side persistence)
-📈 Future Improvements
-Shared team profiles
-Cloud sync
-Tool categorization & tagging
-Authentication (optional)
-Deployment for team-wide use
+---
+
+## Features
+
+| Feature | Description |
+|---|---|
+| **Custom Tool Hub** | Add, edit, and remove tools per workflow stage |
+| **Persistent Storage** | Everything saved locally — no login, no backend |
+| **Drag & Drop Reordering** | Organize tools by priority or workflow order |
+| **Smart Tool Icons** | Auto-fetches favicons for instant visual recognition |
+| **Daily Notes Panel** | Persistent notes for reminders and task tracking |
+| **Weekly Planner** | Clickable day system to manage and view daily tasks |
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="AgentHub_ProductPhotos/Clean_HUD_Example.png" alt="AgentHub clean HUD"/></td>
+    <td><img src="AgentHub_ProductPhotos/Creator_Example.png" alt="AgentHub creator workflow"/></td>
+  </tr>
+  <tr>
+    <td><img src="AgentHub_ProductPhotos/Developer_Example.png" alt="AgentHub developer workflow"/></td>
+    <td><img src="AgentHub_ProductPhotos/Features_Highlighted.png" alt="AgentHub features"/></td>
+  </tr>
+</table>
+
+---
+
+## Purpose
+
+Built to solve a real-world problem observed in a call centre environment. Agents rely on too many disconnected systems — AgentHub reduces that friction by:
+
+- Minimizing tab switching
+- Improving task and schedule visibility
+- Providing a personalized workspace per agent
+
+---
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| **Framework** | React 19 (Vite) |
+| **Styling** | Tailwind CSS |
+| **Persistence** | LocalStorage — client-side, no backend required |
+| **Analytics** | Vercel Analytics |
+
+---
+
+## Roadmap
+
+- Shared team profiles
+- Cloud sync
+- Tool categorization & tagging
+- Optional authentication
+- Team-wide deployment
+
+---
+
+> **Copyright © 2026 Kyron (Dev_Kyron). All Rights Reserved.**
+> This repository is public for portfolio purposes only.
