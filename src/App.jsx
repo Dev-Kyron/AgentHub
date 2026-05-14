@@ -576,7 +576,35 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
   };
   const saveTool = () => {
     if (!name || !url) return;
-    const t = { name, url, desc };
+
+    // Clean tracking & OAuth junk from URLs before saving
+    let cleanUrl = url.trim();
+    try {
+      const parsed = new URL(cleanUrl);
+      const TRACKING = ["gclid","gad_campaignid","gad_source","trk","sc_channel","ef_id","s_kwcid",
+        "utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id",
+        "_hsenc","_hsmi","mc_cid","mc_eid","fbclid","msclkid","dclid","igshid","ref"];
+      const OAUTH = ["client_id","redirect_uri","response_type","response_mode","scope",
+        "nonce","state","prompt","x-client-SKU","x-client-ver","code_challenge","code_challenge_method"];
+
+      const isOAuth = OAUTH.some(k => parsed.searchParams.has(k)) || /\/oauth2\/|\/authorize\b/.test(parsed.pathname);
+      if (isOAuth) {
+        const base = `${parsed.origin}${parsed.pathname.split("/oauth2/")[0].split("/authorize")[0]}`;
+        if (!window.confirm(
+          `This looks like a login redirect URL — it contains session tokens that expire and won't work as a bookmark.\n\nUse the base URL instead?\n\n${base}`
+        )) return;
+        cleanUrl = base;
+      } else {
+        let stripped = false;
+        TRACKING.forEach(k => { if (parsed.searchParams.has(k)) { parsed.searchParams.delete(k); stripped = true; } });
+        if (stripped) {
+          cleanUrl = parsed.toString().replace(/\?$/, "");
+          window.alert(`Tracking parameters removed from URL to keep your share code small.\n\nSaved as:\n${cleanUrl}`);
+        }
+      }
+    } catch {}
+
+    const t = { name, url: cleanUrl, desc };
     if (editingIndex !== null) { const u = [...tools]; u[editingIndex] = t; setTools(u); }
     else setTools([...tools, t]);
     setShowModal(false);
