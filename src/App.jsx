@@ -999,7 +999,7 @@ function AIChatWidget() {
       {open && (
         <div
           className={`${glass} fixed rounded-2xl flex flex-col overflow-hidden`}
-          style={{ bottom: 72, right: 16, width: 480, height: 640, zIndex: 20 }}
+          style={{ top: 16, bottom: 72, right: 16, width: 720, zIndex: 20 }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[--card-border] flex-shrink-0">
