@@ -25,8 +25,24 @@ export default async function handler(req, res) {
     const fetched = await Promise.all(
       sources.map(async (s) => {
         try {
-          const r = await fetch(`https://r.jina.ai/${s.url}`, { headers: { Accept: "text/plain" } });
-          const body = r.ok ? (await r.text()).slice(0, 8000) : null;
+          // Domain-only URLs (e.g. https://site.com or https://site.com/) use Jina Search
+          // to find relevant content across the whole site.
+          // Specific page URLs (e.g. https://site.com/about) use Jina Reader for that page.
+          const parsed = new URL(s.url);
+          const isRootDomain = parsed.pathname === "/" || parsed.pathname === "";
+
+          let r;
+          if (isRootDomain) {
+            r = await fetch(`https://s.jina.ai/${encodeURIComponent(question)}`, {
+              headers: { Accept: "text/plain", "X-Site": s.url },
+            });
+          } else {
+            r = await fetch(`https://r.jina.ai/${s.url}`, {
+              headers: { Accept: "text/plain" },
+            });
+          }
+
+          const body = r.ok ? (await r.text()).slice(0, 10000) : null;
           const tag = `[Source: ${s.url}${s.label ? ` — ${s.label}` : ""}]`;
           return body ? `${tag}\n${body}` : `${tag}\n(could not fetch content)`;
         } catch {
@@ -43,6 +59,11 @@ export default async function handler(req, res) {
     apiMessages = [...messages, { role: "user", content: question }];
   }
 
+  // Switch to SSE streaming so words appear as they're generated
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("X-Accel-Buffering", "no");
+
   try {
     const upstream = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -51,17 +72,31 @@ export default async function handler(req, res) {
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, system, messages: apiMessages }),
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        system,
+        messages: apiMessages,
+        stream: true,
+      }),
     });
 
     if (!upstream.ok) {
       const err = await upstream.json().catch(() => ({}));
-      return res.status(upstream.status).json({ error: err.error?.message || "Upstream API error" });
+      res.write(`data: ${JSON.stringify({ error: err.error?.message || "API error" })}\n\n`);
+      return res.end();
     }
 
-    const data = await upstream.json();
-    return res.status(200).json({ content: data.content[0].text });
+    // Pipe Anthropic's SSE stream straight to the client
+    const reader = upstream.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    res.end();
   }
 }

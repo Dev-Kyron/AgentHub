@@ -835,7 +835,10 @@ function AIChatWidget() {
   const sukInputRef    = useRef(null);
 
   useEffect(() => { try { localStorage.setItem("chat-history", JSON.stringify(messages)); } catch {} }, [messages]);
-  useEffect(() => { try { localStorage.setItem("chat-sources", JSON.stringify(sources));  } catch {} }, [sources]);
+  // Strip runtime-only status field before persisting
+  useEffect(() => {
+    try { localStorage.setItem("chat-sources", JSON.stringify(sources.map(s => ({ url: s.url, label: s.label })))); } catch {}
+  }, [sources]);
 
   useEffect(() => {
     if (open && view === "chat") messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -872,12 +875,19 @@ function AIChatWidget() {
     }
   };
 
-  const addSource = () => {
+  const addSource = async () => {
     const url = newSourceUrl.trim();
     if (!url) return;
     try { new URL(url); } catch { alert("Please enter a valid URL (include https://)"); return; }
-    setSources(prev => [...prev, { url, label: newSourceLabel.trim() }]);
+    setSources(prev => [...prev, { url, label: newSourceLabel.trim(), status: "checking" }]);
     setNewSourceUrl(""); setNewSourceLabel("");
+    // Pre-validate the URL is reachable in the background
+    try {
+      const r = await fetch(`https://r.jina.ai/${url}`, { headers: { Accept: "text/plain" } });
+      setSources(prev => prev.map(s => s.url === url ? { ...s, status: r.ok ? "ready" : "error" } : s));
+    } catch {
+      setSources(prev => prev.map(s => s.url === url ? { ...s, status: "error" } : s));
+    }
   };
 
   const removeSource = (i) => setSources(prev => prev.filter((_, idx) => idx !== i));
@@ -914,8 +924,46 @@ function AIChatWidget() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
-      const data = await res.json();
-      setMessages([...newHistory, { role: "assistant", content: data.content, ts: Date.now() }]);
+
+      // Add placeholder bubble — typing dots show until first token arrives
+      const placeholder = { role: "assistant", content: "", ts: Date.now(), searching: sources.length > 0 };
+      setMessages([...newHistory, placeholder]);
+
+      // Read the SSE stream and append tokens as they arrive
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer   = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (!data || data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.error) throw new Error(parsed.error);
+            if (parsed.type === "content_block_delta" && parsed.delta?.type === "text_delta") {
+              fullText += parsed.delta.text;
+              setMessages(prev => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...placeholder, content: fullText };
+                return updated;
+              });
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes("JSON") && !e.message.includes("token")) throw e;
+          }
+        }
+      }
+
+      if (!fullText) throw new Error("No response received.");
     } catch (e) {
       setMessages([...newHistory, { role: "assistant", content: `⚠️ ${e.message}`, ts: Date.now(), error: true }]);
     } finally {
@@ -1028,19 +1076,21 @@ function AIChatWidget() {
                       }`}
                       style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                     >
-                      {msg.content}
+                      {msg.role === "assistant" && !msg.content && !msg.error ? (
+                        <div className="flex flex-col gap-1.5">
+                          {msg.searching && (
+                            <span className="text-[--text-muted] text-[10px] animate-pulse">Searching sources…</span>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            {[0, 150, 300].map(delay => (
+                              <div key={delay} className="w-1.5 h-1.5 rounded-full bg-[--text-muted] animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+                            ))}
+                          </div>
+                        </div>
+                      ) : msg.content}
                     </div>
                   </div>
                 ))}
-                {loading && (
-                  <div className="flex justify-start">
-                    <div className="bg-white/5 border border-[--card-border] px-3 py-2.5 rounded-2xl rounded-bl-sm flex items-center gap-1.5">
-                      {[0, 150, 300].map(delay => (
-                        <div key={delay} className="w-1.5 h-1.5 rounded-full bg-[--text-muted] animate-bounce" style={{ animationDelay: `${delay}ms` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -1086,9 +1136,14 @@ function AIChatWidget() {
                   <div key={i} className="flex items-center gap-2 bg-white/5 border border-[--card-border] rounded-xl p-2.5">
                     <FaviconIcon url={s.url} />
                     <div className="flex-1 min-w-0">
-                      {s.label && (
-                        <p className="text-[--text-primary] text-xs font-medium truncate">{s.label}</p>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {s.label && (
+                          <p className="text-[--text-primary] text-xs font-medium truncate">{s.label}</p>
+                        )}
+                        {s.status === "checking" && <span className="text-[--text-muted] text-[10px] animate-pulse flex-shrink-0">checking…</span>}
+                        {s.status === "ready"    && <span className="text-green-400 text-[10px] flex-shrink-0">✓</span>}
+                        {s.status === "error"    && <span className="text-yellow-400 text-[10px] flex-shrink-0" title="Could not reach this URL">⚠</span>}
+                      </div>
                       <a
                         href={s.url} target="_blank" rel="noopener noreferrer"
                         className="text-[--text-muted] text-[10px] hover:text-[--text-secondary] truncate block transition"
