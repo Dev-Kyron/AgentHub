@@ -31,20 +31,52 @@ export default async function handler(req, res) {
           const parsed = new URL(s.url);
           const isRootDomain = parsed.pathname === "/" || parsed.pathname === "";
 
-          let r;
-          if (isRootDomain) {
-            r = await fetch(`https://s.jina.ai/${encodeURIComponent(question)}`, {
-              headers: { Accept: "text/plain", "X-Site": s.url },
-            });
-          } else {
-            r = await fetch(`https://r.jina.ai/${s.url}`, {
-              headers: { Accept: "text/plain" },
-            });
-          }
+          const jinaHeaders = { Accept: "text/plain" };
+          if (process.env.JINA_API_KEY) jinaHeaders["Authorization"] = `Bearer ${process.env.JINA_API_KEY}`;
 
-          const body = r.ok ? (await r.text()).slice(0, 10000) : null;
+          let body = null;
+
+          if (isRootDomain) {
+            // 1. Try authenticated Jina Search (whole-site)
+            const searchRes = await fetch(`https://s.jina.ai/${encodeURIComponent(question)}`, {
+              headers: { ...jinaHeaders, "X-Site": s.url },
+            });
+            if (searchRes.ok) {
+              body = (await searchRes.text()).slice(0, 15000);
+            }
+
+            // 2. Fall back: read homepage + a few likely subpages
+            if (!body) {
+              const origins = [s.url];
+              // Derive candidate pages from question keywords
+              const kw = question.toLowerCase();
+              const candidates = [
+                kw.includes("insur") && "/insurance",
+                kw.includes("super") && "/superannuation",
+                kw.includes("retire") && "/retirement",
+                kw.includes("invest") && "/investments",
+                kw.includes("fee") && "/fees",
+                kw.includes("contact") && "/contact-us",
+              ].filter(Boolean);
+              candidates.forEach(path => origins.push(s.url.replace(/\/$/, "") + path));
+
+              const pages = await Promise.all(
+                origins.slice(0, 4).map(async (u) => {
+                  try {
+                    const r2 = await fetch(`https://r.jina.ai/${u}`, { headers: jinaHeaders });
+                    return r2.ok ? (await r2.text()).slice(0, 5000) : null;
+                  } catch { return null; }
+                })
+              );
+              const combined = pages.filter(Boolean).join("\n\n---\n\n");
+              if (combined) body = combined;
+            }
+          } else {
+            const r = await fetch(`https://r.jina.ai/${s.url}`, { headers: jinaHeaders });
+            if (r.ok) body = (await r.text()).slice(0, 15000);
+          }
           const tag = `[Source: ${s.url}${s.label ? ` — ${s.label}` : ""}]`;
-          return body ? `${tag}\n${body}` : `${tag}\n(could not fetch content)`;
+          return body ? `${tag}\n${body}` : `${tag}\n(could not fetch content — try adding a specific page URL instead of the root domain)`;
         } catch {
           return `[Source: ${s.url}]\n(could not fetch content)`;
         }
