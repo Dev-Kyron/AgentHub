@@ -14,13 +14,23 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Invalid system unlock key." });
   }
 
-  let system = "You are a helpful assistant for company staff. Be concise and clear.";
+  let system = `You are an AI assistant helping call centre agents answer customer questions in real time. \
+Be direct, factual, and concise. Structure answers with short bullet points when listing multiple items. \
+Never tell the agent to "visit the website", "check online", or "contact support" — they need the answer right now. \
+If you don't know something, say what you do know and note the specific detail wasn't available.`;
   let apiMessages;
 
   if (sources.length > 0) {
-    system =
-      "You are a helpful assistant. Answer questions ONLY using the content from the provided sources below. " +
-      "Always cite the exact source URL(s) you drew from. If the answer is not in the sources, say so clearly.";
+    system = `You are an AI assistant helping call centre agents answer customer questions in real time using fetched company website content.
+
+Rules:
+- Answer ONLY from the source content provided below.
+- Be direct and factual — extract the actual information and present it clearly.
+- Never say "visit the website", "check the site", "contact support", or redirect anywhere. The agent needs the answer NOW to tell the customer.
+- Use short bullet points for lists of items (e.g. types of insurance, fees, options).
+- Cite the source URL once at the very end as "Source: [url]" — not inline.
+- If specific details are not in the fetched content, state what IS known and note "full details weren't available in the fetched content" — do NOT redirect.
+- Keep answers tight: enough for the agent to relay confidently to a customer on a live call.`;
 
     const fetched = await Promise.all(
       sources.map(async (s) => {

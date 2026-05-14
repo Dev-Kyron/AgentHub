@@ -818,6 +818,18 @@ function ShareModal({ getExportData, onClose }) {
 /* ─────────────────────────────────────────────
    AI CHAT WIDGET
 ───────────────────────────────────────────── */
+function renderContent(text) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+        className="underline text-[--brand] hover:opacity-75 transition break-all"
+        onClick={e => e.stopPropagation()}
+      >{part}</a>
+    ) : part
+  );
+}
+
 function AIChatWidget() {
   const [open,           setOpen]           = useState(false);
   const [view,           setView]           = useState("chat"); // "chat" | "sources"
@@ -1066,29 +1078,36 @@ function AIChatWidget() {
                 )}
                 {messages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-[--btn-primary-bg] border border-[--brand-border] text-[--text-primary] rounded-br-sm"
-                          : msg.error
-                            ? "bg-red-900/40 border border-red-700/40 text-red-300 rounded-bl-sm"
-                            : "bg-white/5 border border-[--card-border] text-[--text-secondary] rounded-bl-sm"
-                      }`}
-                      style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                    >
-                      {msg.role === "assistant" && !msg.content && !msg.error ? (
-                        <div className="flex flex-col gap-1.5">
-                          {msg.searching && (
-                            <span className="text-[--text-muted] text-[10px] animate-pulse">Searching sources…</span>
-                          )}
+                    {msg.role === "assistant" && !msg.content && !msg.error ? (
+                      <div className="flex items-end gap-2 max-w-[85%]">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>🤖</div>
+                        <div className="bg-white/5 border border-[--brand-border] rounded-2xl rounded-bl-sm px-4 py-3"
+                          style={{ boxShadow: "0 0 12px var(--brand-glow)" }}>
+                          <div className="text-[--text-muted] text-[11px] mb-2 animate-pulse">
+                            {msg.searching ? "Searching sources…" : "Thinking…"}
+                          </div>
                           <div className="flex items-center gap-1.5">
                             {[0, 150, 300].map(delay => (
-                              <div key={delay} className="w-1.5 h-1.5 rounded-full bg-[--text-muted] animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+                              <div key={delay} className="w-2 h-2 rounded-full bg-[--brand] animate-bounce opacity-70" style={{ animationDelay: `${delay}ms` }} />
                             ))}
                           </div>
                         </div>
-                      ) : msg.content}
-                    </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
+                          msg.role === "user"
+                            ? "bg-[--btn-primary-bg] border border-[--brand-border] text-[--text-primary] rounded-br-sm"
+                            : msg.error
+                              ? "bg-red-900/40 border border-red-700/40 text-red-300 rounded-bl-sm"
+                              : "bg-white/5 border border-[--card-border] text-[--text-secondary] rounded-bl-sm"
+                        }`}
+                        style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                      >
+                        {msg.role === "assistant" ? renderContent(msg.content) : msg.content}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
