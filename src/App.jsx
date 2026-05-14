@@ -976,7 +976,7 @@ function AIChatWidget() {
       {/* Floating toggle button */}
       <button
         onClick={() => setOpen(o => !o)}
-        title="AI Assistant"
+        title="AI Agent"
         className={`fixed bottom-6 right-4 w-12 h-12 flex items-center justify-center rounded-2xl ${btnPrimary} shadow-lg transition-all hover:scale-110 active:scale-95 text-xl`}
         style={{ zIndex: 20, boxShadow: "0 4px 24px var(--brand-glow)" }}
       >
@@ -987,13 +987,13 @@ function AIChatWidget() {
       {open && (
         <div
           className={`${glass} fixed rounded-2xl flex flex-col overflow-hidden`}
-          style={{ bottom: 72, right: 16, width: 380, height: 520, zIndex: 20 }}
+          style={{ bottom: 72, right: 16, width: 480, height: 640, zIndex: 20 }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[--card-border] flex-shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-base">🤖</span>
-              <span className="text-[--text-primary] font-semibold text-sm">AI Assistant</span>
+              <span className="text-[--text-primary] font-semibold text-sm">AI Agent</span>
               {sources.length > 0 && (
                 <span className="text-[10px] bg-[--brand-bg] border border-[--brand-border] text-[--text-secondary] px-2 py-0.5 rounded-full">
                   {sources.length} source{sources.length !== 1 ? "s" : ""}
