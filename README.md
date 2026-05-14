@@ -2,10 +2,8 @@
 
 > A lightweight productivity dashboard built to centralise the daily workflow of call centre agents — one tab, every tool, powered by AI.
 
-[![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub-ecru-five.vercel.app)
-![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square)
-![Vite](https://img.shields.io/badge/Vite-8-646cff?style=flat-square)
-![Tailwind](https://img.shields.io/badge/Tailwind-3-38bdf8?style=flat-square)
+[![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub.solutions)
+![Deployed](https://img.shields.io/badge/Live-agenthub.solutions-7c3aed?style=flat-square)
 ![Vercel](https://img.shields.io/badge/Deployed-Vercel-black?style=flat-square)
 
 ---
@@ -36,15 +34,20 @@ AgentHub operates in two modes. The core productivity suite is **free for everyo
 | **14 Colour Themes** | Brand-matched and custom colour themes with live switching |
 | **Guided Tour** | Built-in interactive onboarding tour for new users |
 
-### Paid — AI Assistant (SUK Required)
+### Paid — AI Agent (SUK Required)
 
 | Feature | Description |
 |---|---|
-| **AI Chat Widget** | Floating chat panel powered by Claude Haiku — fast, cost-efficient responses |
-| **Source-Specific Search** | Add company URLs as sources; the AI fetches and answers exclusively from those pages |
-| **Cited Answers** | Every source-based answer includes the URL the AI drew from |
+| **AI Agent Panel** | Floating chat panel powered by Claude — real-time streaming responses with a live thinking indicator |
+| **Source-Specific Search** | Add company URLs as sources; the AI fetches and answers exclusively from that content |
+| **Whole-Site Search** | Add a root domain and the AI searches across the entire site — not just one page |
+| **Bookmarklet Capture** | One-click browser bookmarklet captures any private/internal page (e.g. Lighthouse) including PDF links — no login required from the server |
+| **PDF Support** | PDF links found on captured pages are automatically added and read as sources |
+| **Call Centre Optimised** | AI delivers structured, in-depth answers formatted for agents on live calls — never redirects to a website |
+| **Cited Answers** | Source URL cited at the end of every source-based answer |
 | **Chat History** | Conversation persists across sessions via local storage |
 | **SUK Gate** | Access controlled via a System Unlock Key — no key, no AI access |
+| **Multi-Client SUKs** | One deployment supports multiple clients — each gets their own key, revoked instantly by removing it |
 
 ---
 
@@ -95,12 +98,14 @@ The AI Assistant is powered by a secure server-side AI model. All packages are b
 
 ## How the AI Assistant Works
 
-1. The floating `🤖` button opens the AI chat panel
-2. Users are prompted to enter the **System Unlock Key (SUK)** before gaining access
-3. The SUK is validated server-side — it is never exposed to the browser
-4. Once unlocked, agents can chat freely or add **company source URLs** via the `🔗` button
-5. With sources active, the AI fetches each URL on every query using Jina Reader and answers exclusively from that content, citing the source URL in its response
-6. All API calls are proxied through a Vercel serverless function — the Anthropic API key is never visible to end users
+1. The floating `🤖` button opens the AI Agent panel
+2. Agents enter their **System Unlock Key (SUK)** — validated server-side before any AI access is granted
+3. Once unlocked, agents can chat freely or add **company source URLs** via the `🔗` button
+4. For private internal tools (e.g. Lighthouse), agents install a **one-click bookmarklet** — click it on any page they're logged into, then paste the captured content into AgentHub as a source
+5. PDF links found on captured pages are automatically added and fetched as additional sources
+6. With sources active, the AI answers exclusively from that content — structured for live calls with no website redirects
+7. Responses stream in real time with a live thinking indicator
+8. All API calls are proxied through a serverless function — the Anthropic API key is never visible to end users
 
 ---
 
@@ -122,7 +127,7 @@ The AI Assistant is powered by a secure server-side AI model. All packages are b
 
 No install required. All core features are available immediately:
 
-[![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub-ecru-five.vercel.app)
+[![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub.solutions)
 
 ---
 
