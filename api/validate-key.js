@@ -6,6 +6,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { suk } = req.body;
-  const valid = suk && suk === process.env.SUK_KEY;
+  const activeKeys = (process.env.SUK_KEYS || "").split(",").map(k => k.trim()).filter(Boolean);
+  const valid = suk && activeKeys.includes(suk);
   return res.status(valid ? 200 : 401).json({ valid: !!valid });
 }

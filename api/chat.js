@@ -9,7 +9,8 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
 
   const { messages = [], question, sources = [], suk } = req.body;
-  if (!suk || suk !== process.env.SUK_KEY) {
+  const activeKeys = (process.env.SUK_KEYS || "").split(",").map(k => k.trim()).filter(Boolean);
+  if (!suk || !activeKeys.includes(suk)) {
     return res.status(401).json({ error: "Invalid system unlock key." });
   }
 
