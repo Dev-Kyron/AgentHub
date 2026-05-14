@@ -142,6 +142,19 @@ Built to solve a real-world problem observed in a call centre environment. Agent
 
 ---
 
+## Feedback & Reviews
+
+Have feedback, a feature request, or want to share how you're using AgentHub?
+
+**[💬 Join the Discussion →](https://github.com/Dev-Kyron/AgentHub/discussions)**
+
+- **General feedback** — what's working, what isn't
+- **Feature requests** — something you'd like to see added
+- **Show & tell** — share how your team is using it
+- **Q&A** — questions about setup or the AI Agent features
+
+---
+
 ## Roadmap
 
 - [ ] Admin dashboard to manage SUK rotation and usage monitoring
