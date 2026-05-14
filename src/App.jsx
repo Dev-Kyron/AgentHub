@@ -818,6 +818,8 @@ function ShareModal({ getExportData, onClose }) {
 /* ─────────────────────────────────────────────
    AI CHAT WIDGET
 ───────────────────────────────────────────── */
+const BOOKMARKLET = `javascript:(function(){var u=location.href,ti=document.title,tx=document.body.innerText.trim().slice(0,60000),pl=[].slice.call(document.querySelectorAll('a[href*=".pdf"]')).map(function(a){return a.href;}).slice(0,8),d=JSON.stringify({__ah:1,url:u,title:ti,text:tx,pdfs:pl});navigator.clipboard.writeText(d).then(function(){var t=document.createElement('div');t.setAttribute('style','position:fixed;top:16px;right:16px;z-index:2147483647;background:#7c3aed;color:#fff;padding:10px 18px;border-radius:12px;font:600 13px/1 system-ui;box-shadow:0 4px 24px rgba(124,58,237,.5)');t.textContent='✓ Captured — paste into AgentHub';document.body.appendChild(t);setTimeout(function(){t.remove();},3000);},function(){alert('Clipboard blocked — allow clipboard access for this site.');});})();`;
+
 function renderContent(text) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g);
   return parts.map((part, i) =>
@@ -834,7 +836,7 @@ function AIChatWidget() {
   const [open,           setOpen]           = useState(false);
   const [view,           setView]           = useState("chat"); // "chat" | "sources"
   const [messages,       setMessages]       = useState(() => { try { return JSON.parse(localStorage.getItem("chat-history") || "[]"); } catch { return []; } });
-  const [sources,        setSources]        = useState(() => { try { return JSON.parse(localStorage.getItem("chat-sources") || "[]"); } catch { return []; } });
+  const [sources,        setSources]        = useState(() => { try { return JSON.parse(localStorage.getItem("chat-sources") || "[]").map(s => ({ ...s, status: s.type === "captured" ? "ready" : s.status })); } catch { return []; } });
   const [suk,            setSuk]            = useState(() => localStorage.getItem("chat-suk") || "");
   const [sukDraft,       setSukDraft]       = useState("");
   const [sukError,       setSukError]       = useState("");
@@ -843,13 +845,23 @@ function AIChatWidget() {
   const [loading,        setLoading]        = useState(false);
   const [newSourceUrl,   setNewSourceUrl]   = useState("");
   const [newSourceLabel, setNewSourceLabel] = useState("");
-  const messagesEndRef = useRef(null);
-  const sukInputRef    = useRef(null);
+  const [showBookmarklet, setShowBookmarklet] = useState(false);
+  const messagesEndRef  = useRef(null);
+  const sukInputRef     = useRef(null);
+  const bmLinkRef       = useRef(null);
+
+  useEffect(() => { if (bmLinkRef.current) bmLinkRef.current.href = BOOKMARKLET; }, [showBookmarklet]);
 
   useEffect(() => { try { localStorage.setItem("chat-history", JSON.stringify(messages)); } catch {} }, [messages]);
-  // Strip runtime-only status field before persisting
   useEffect(() => {
-    try { localStorage.setItem("chat-sources", JSON.stringify(sources.map(s => ({ url: s.url, label: s.label })))); } catch {}
+    try {
+      localStorage.setItem("chat-sources", JSON.stringify(
+        sources.map(s => s.type === "captured"
+          ? { url: s.url, label: s.label, content: s.content, type: "captured" }
+          : { url: s.url, label: s.label }
+        )
+      ));
+    } catch {}
   }, [sources]);
 
   useEffect(() => {
@@ -903,6 +915,28 @@ function AIChatWidget() {
   };
 
   const removeSource = (i) => setSources(prev => prev.filter((_, idx) => idx !== i));
+
+  const pasteCapture = async () => {
+    try {
+      const raw = await navigator.clipboard.readText();
+      const data = JSON.parse(raw);
+      if (!data.__ah) { alert("No captured page in clipboard.\n\nRun the bookmarklet on a Lighthouse page first, then come back and click Paste."); return; }
+      if (sources.find(s => s.url === data.url)) { alert("This page is already added as a source."); return; }
+      setSources(prev => [...prev, { url: data.url, label: data.title || "Captured page", content: data.text, type: "captured", status: "ready" }]);
+      // Auto-add any PDF links found on the captured page
+      (data.pdfs || []).forEach(async (pdfUrl) => {
+        setSources(prev => prev.find(s => s.url === pdfUrl) ? prev : [...prev, { url: pdfUrl, label: "PDF", status: "checking" }]);
+        try {
+          const r = await fetch(`https://r.jina.ai/${pdfUrl}`, { headers: { Accept: "text/plain" } });
+          setSources(prev => prev.map(s => s.url === pdfUrl ? { ...s, status: r.ok ? "ready" : "error" } : s));
+        } catch { setSources(prev => prev.map(s => s.url === pdfUrl ? { ...s, status: "error" } : s)); }
+      });
+    } catch (e) {
+      if (e.name === "NotAllowedError") alert("Clipboard access denied.\n\nAllow clipboard permissions for this site in your browser settings.");
+      else if (e instanceof SyntaxError) alert("Clipboard doesn't contain captured page data.\n\nRun the bookmarklet on a Lighthouse page first.");
+      else alert("Could not paste: " + e.message);
+    }
+  };
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -1159,9 +1193,10 @@ function AIChatWidget() {
                         {s.label && (
                           <p className="text-[--text-primary] text-xs font-medium truncate">{s.label}</p>
                         )}
-                        {s.status === "checking" && <span className="text-[--text-muted] text-[10px] animate-pulse flex-shrink-0">checking…</span>}
-                        {s.status === "ready"    && <span className="text-green-400 text-[10px] flex-shrink-0">✓</span>}
-                        {s.status === "error"    && <span className="text-yellow-400 text-[10px] flex-shrink-0" title="Could not reach this URL">⚠</span>}
+                        {s.type === "captured"   && <span className="text-purple-400 text-[10px] flex-shrink-0" title="Captured from browser">📋 captured</span>}
+                        {s.type !== "captured" && s.status === "checking" && <span className="text-[--text-muted] text-[10px] animate-pulse flex-shrink-0">checking…</span>}
+                        {s.type !== "captured" && s.status === "ready"    && <span className="text-green-400 text-[10px] flex-shrink-0">✓</span>}
+                        {s.type !== "captured" && s.status === "error"    && <span className="text-yellow-400 text-[10px] flex-shrink-0" title="Could not reach this URL">⚠</span>}
                       </div>
                       <a
                         href={s.url} target="_blank" rel="noopener noreferrer"
@@ -1193,6 +1228,56 @@ function AIChatWidget() {
                     className={`${btnPrimary} px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0`}
                   >+ Add</button>
                 </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="flex-1 h-px bg-[--card-border]" />
+                  <span className="text-[10px] text-[--text-muted]">or use bookmarklet</span>
+                  <div className="flex-1 h-px bg-[--card-border]" />
+                </div>
+
+                {/* Paste + Bookmarklet buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={pasteCapture}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-[--card-border] hover:border-[--brand] rounded-xl px-3 py-2 text-xs text-[--text-secondary] hover:text-white transition font-medium"
+                  >📋 Paste captured page</button>
+                  <button
+                    onClick={() => setShowBookmarklet(v => !v)}
+                    className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-[--card-border] hover:border-[--brand] rounded-xl px-3 py-2 text-xs text-[--text-secondary] hover:text-white transition font-medium"
+                  >🔖 {showBookmarklet ? "Hide" : "Get bookmarklet"}</button>
+                </div>
+
+                {/* Bookmarklet install panel */}
+                {showBookmarklet && (
+                  <div className="bg-white/5 border border-[--brand-border] rounded-xl p-3 space-y-3 text-xs">
+                    <p className="text-[--text-primary] font-semibold">Install the bookmarklet</p>
+
+                    <div className="space-y-1.5">
+                      <p className="text-[--text-muted] leading-relaxed">1. Drag this button to your browser's bookmarks bar:</p>
+                      <a
+                        ref={bmLinkRef}
+                        href="#"
+                        draggable
+                        onClick={e => e.preventDefault()}
+                        className="inline-flex items-center gap-1.5 bg-[--btn-primary-bg] border border-[--brand-border] text-white text-xs font-bold px-4 py-2 rounded-xl cursor-grab active:cursor-grabbing select-none"
+                        style={{ boxShadow: "0 2px 12px var(--brand-glow)" }}
+                      >🔖 AgentHub Capture</a>
+                      <p className="text-[--text-muted] leading-relaxed">2. Log into Lighthouse as normal.</p>
+                      <p className="text-[--text-muted] leading-relaxed">3. Navigate to any Lighthouse page you want the AI to use.</p>
+                      <p className="text-[--text-muted] leading-relaxed">4. Click <strong className="text-[--text-primary]">AgentHub Capture</strong> in your bookmarks bar — a purple toast confirms it worked.</p>
+                      <p className="text-[--text-muted] leading-relaxed">5. Come back here and click <strong className="text-[--text-primary]">📋 Paste captured page</strong>. Done — the AI now has that page's full content including any PDF links.</p>
+                    </div>
+
+                    <div className="bg-black/30 rounded-lg p-2 space-y-1">
+                      <p className="text-[--text-muted] text-[10px] font-semibold uppercase tracking-widest">What gets captured</p>
+                      <p className="text-[--text-muted] text-[10px] leading-relaxed">• All visible text on the page (up to 60,000 characters)</p>
+                      <p className="text-[--text-muted] text-[10px] leading-relaxed">• Up to 8 PDF links found on the page (auto-added as sources)</p>
+                      <p className="text-[--text-muted] text-[10px] leading-relaxed">• Page URL and title</p>
+                      <p className="text-[--text-muted] text-[10px] leading-relaxed">• Nothing is sent to any server — content stays in your clipboard until you paste it</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

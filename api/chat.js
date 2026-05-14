@@ -39,6 +39,12 @@ Rules:
     const fetched = await Promise.all(
       sources.map(async (s) => {
         try {
+          // Captured sources (from bookmarklet) already have content — no fetch needed
+          if (s.content) {
+            const tag = `[Source: ${s.url}${s.label ? ` — ${s.label}` : ""}]`;
+            return `${tag}\n${s.content.slice(0, 15000)}`;
+          }
+
           // Domain-only URLs (e.g. https://site.com or https://site.com/) use Jina Search
           // to find relevant content across the whole site.
           // Specific page URLs (e.g. https://site.com/about) use Jina Reader for that page.
