@@ -816,6 +816,240 @@ function ShareModal({ getExportData, onClose }) {
 }
 
 /* ─────────────────────────────────────────────
+   AI CHAT WIDGET
+───────────────────────────────────────────── */
+function AIChatWidget() {
+  const [open,           setOpen]           = useState(false);
+  const [view,           setView]           = useState("chat"); // "chat" | "sources"
+  const [messages,       setMessages]       = useState(() => { try { return JSON.parse(localStorage.getItem("chat-history") || "[]"); } catch { return []; } });
+  const [sources,        setSources]        = useState(() => { try { return JSON.parse(localStorage.getItem("chat-sources") || "[]"); } catch { return []; } });
+  const [input,          setInput]          = useState("");
+  const [loading,        setLoading]        = useState(false);
+  const [newSourceUrl,   setNewSourceUrl]   = useState("");
+  const [newSourceLabel, setNewSourceLabel] = useState("");
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => { try { localStorage.setItem("chat-history", JSON.stringify(messages)); } catch {} }, [messages]);
+  useEffect(() => { try { localStorage.setItem("chat-sources", JSON.stringify(sources));  } catch {} }, [sources]);
+
+  useEffect(() => {
+    if (open && view === "chat") messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, open, view]);
+
+  const addSource = () => {
+    const url = newSourceUrl.trim();
+    if (!url) return;
+    try { new URL(url); } catch { alert("Please enter a valid URL (include https://)"); return; }
+    setSources(prev => [...prev, { url, label: newSourceLabel.trim() }]);
+    setNewSourceUrl(""); setNewSourceLabel("");
+  };
+
+  const removeSource = (i) => setSources(prev => prev.filter((_, idx) => idx !== i));
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+
+    const userMsg    = { role: "user", content: text, ts: Date.now() };
+    const newHistory = [...messages, userMsg];
+    setMessages(newHistory);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          question: text,
+          sources,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setMessages([...newHistory, { role: "assistant", content: data.content, ts: Date.now() }]);
+    } catch (e) {
+      setMessages([...newHistory, { role: "assistant", content: `⚠️ ${e.message}`, ts: Date.now(), error: true }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Floating toggle button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="AI Assistant"
+        className={`fixed bottom-6 right-4 w-12 h-12 flex items-center justify-center rounded-2xl ${btnPrimary} shadow-lg transition-all hover:scale-110 active:scale-95 text-xl`}
+        style={{ zIndex: 20, boxShadow: "0 4px 24px var(--brand-glow)" }}
+      >
+        {open ? "×" : "🤖"}
+      </button>
+
+      {/* Chat panel */}
+      {open && (
+        <div
+          className={`${glass} fixed rounded-2xl flex flex-col overflow-hidden`}
+          style={{ bottom: 72, right: 16, width: 380, height: 520, zIndex: 20 }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[--card-border] flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🤖</span>
+              <span className="text-[--text-primary] font-semibold text-sm">AI Assistant</span>
+              {sources.length > 0 && (
+                <span className="text-[10px] bg-[--brand-bg] border border-[--brand-border] text-[--text-secondary] px-2 py-0.5 rounded-full">
+                  {sources.length} source{sources.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setView(v => v === "sources" ? "chat" : "sources")}
+                title="Manage Sources"
+                className={`w-7 h-7 flex items-center justify-center rounded-lg text-sm transition ${view === "sources" ? "bg-[--brand-bg] border border-[--brand-border] text-[--text-primary]" : "text-[--text-muted] hover:text-[--text-primary] hover:bg-white/10"}`}
+              >🔗</button>
+              <button
+                onClick={() => setOpen(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-[--text-muted] hover:text-white hover:bg-white/10 transition text-lg leading-none"
+              >×</button>
+            </div>
+          </div>
+
+          {/* ── CHAT VIEW ── */}
+          {view === "chat" && (
+            <>
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+                {messages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-6">
+                    <span className="text-3xl">🤖</span>
+                    <p className="text-[--text-secondary] text-sm font-medium">Hi! I'm your AI assistant.</p>
+                    <p className="text-[--text-muted] text-xs leading-relaxed">
+                      {sources.length > 0
+                        ? `I'll answer using your ${sources.length} source${sources.length !== 1 ? "s" : ""}. Ask me anything!`
+                        : "Chat freely, or add company URLs via 🔗 to restrict answers to those pages."}
+                    </p>
+                  </div>
+                )}
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-[--btn-primary-bg] border border-[--brand-border] text-[--text-primary] rounded-br-sm"
+                          : msg.error
+                            ? "bg-red-900/40 border border-red-700/40 text-red-300 rounded-bl-sm"
+                            : "bg-white/5 border border-[--card-border] text-[--text-secondary] rounded-bl-sm"
+                      }`}
+                      style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="bg-white/5 border border-[--card-border] px-3 py-2.5 rounded-2xl rounded-bl-sm flex items-center gap-1.5">
+                      {[0, 150, 300].map(delay => (
+                        <div key={delay} className="w-1.5 h-1.5 rounded-full bg-[--text-muted] animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <div className="flex gap-2 p-3 border-t border-[--card-border] flex-shrink-0">
+                <input
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                  placeholder="Ask anything…"
+                  className="flex-1 bg-white/5 border border-[--card-border] rounded-xl px-3 py-2 text-sm text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand]"
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={loading || !input.trim()}
+                  className={`${btnPrimary} px-3 py-2 rounded-xl text-sm font-bold text-white flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed`}
+                >→</button>
+              </div>
+
+              {messages.length > 0 && (
+                <div className="px-3 pb-2 flex justify-end flex-shrink-0">
+                  <button
+                    onClick={() => setMessages([])}
+                    className="text-[10px] text-[--text-muted] hover:text-[--text-secondary] transition"
+                  >Clear history</button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── SOURCES VIEW ── */}
+          {view === "sources" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-[--card-border] flex-shrink-0">
+                <p className="text-[--text-muted] text-xs leading-relaxed">
+                  Add company URLs. The AI will fetch and use only these pages to answer, and cite where it found the info.
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+                {sources.length === 0 && (
+                  <p className="text-[--text-muted] text-xs italic py-2 text-center">No sources yet — add a URL below.</p>
+                )}
+                {sources.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-white/5 border border-[--card-border] rounded-xl p-2.5">
+                    <FaviconIcon url={s.url} />
+                    <div className="flex-1 min-w-0">
+                      {s.label && (
+                        <p className="text-[--text-primary] text-xs font-medium truncate">{s.label}</p>
+                      )}
+                      <a
+                        href={s.url} target="_blank" rel="noopener noreferrer"
+                        className="text-[--text-muted] text-[10px] hover:text-[--text-secondary] truncate block transition"
+                      >{s.url}</a>
+                    </div>
+                    <button onClick={() => removeSource(i)} className="text-red-400 hover:text-red-300 transition text-xs flex-shrink-0">✕</button>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 border-t border-[--card-border] space-y-2 flex-shrink-0">
+                <input
+                  value={newSourceUrl}
+                  onChange={e => setNewSourceUrl(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addSource()}
+                  placeholder="https://company.com/page"
+                  className="w-full bg-white/5 border border-[--card-border] rounded-xl px-3 py-2 text-xs text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand]"
+                />
+                <div className="flex gap-2">
+                  <input
+                    value={newSourceLabel}
+                    onChange={e => setNewSourceLabel(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && addSource()}
+                    placeholder="Label (optional)"
+                    className="flex-1 bg-white/5 border border-[--card-border] rounded-xl px-3 py-2 text-xs text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand]"
+                  />
+                  <button
+                    onClick={addSource}
+                    className={`${btnPrimary} px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0`}
+                  >+ Add</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────
    SHIFT SCHEDULER
 ───────────────────────────────────────────── */
 function ShiftScheduler({ tourRef, highlighted }) {
@@ -1154,6 +1388,8 @@ export default function App() {
 
       {showShare     && <ShareModal getExportData={getExportData} onClose={() => setShowShare(false)} />}
       {showBootEmpty && <BootEmptyModal onClose={() => setShowBootEmpty(false)} />}
+
+      <AIChatWidget />
 
       {/* Copyright */}
       <p className="fixed bottom-2 right-4 text-[10px] text-white/20 select-none" style={{ zIndex: 10 }}>
