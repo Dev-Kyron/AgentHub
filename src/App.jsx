@@ -823,11 +823,16 @@ function AIChatWidget() {
   const [view,           setView]           = useState("chat"); // "chat" | "sources"
   const [messages,       setMessages]       = useState(() => { try { return JSON.parse(localStorage.getItem("chat-history") || "[]"); } catch { return []; } });
   const [sources,        setSources]        = useState(() => { try { return JSON.parse(localStorage.getItem("chat-sources") || "[]"); } catch { return []; } });
+  const [suk,            setSuk]            = useState(() => localStorage.getItem("chat-suk") || "");
+  const [sukDraft,       setSukDraft]       = useState("");
+  const [sukError,       setSukError]       = useState("");
+  const [validating,     setValidating]     = useState(false);
   const [input,          setInput]          = useState("");
   const [loading,        setLoading]        = useState(false);
   const [newSourceUrl,   setNewSourceUrl]   = useState("");
   const [newSourceLabel, setNewSourceLabel] = useState("");
   const messagesEndRef = useRef(null);
+  const sukInputRef    = useRef(null);
 
   useEffect(() => { try { localStorage.setItem("chat-history", JSON.stringify(messages)); } catch {} }, [messages]);
   useEffect(() => { try { localStorage.setItem("chat-sources", JSON.stringify(sources));  } catch {} }, [sources]);
@@ -835,6 +840,37 @@ function AIChatWidget() {
   useEffect(() => {
     if (open && view === "chat") messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open, view]);
+
+  useEffect(() => {
+    if (open && !suk) setTimeout(() => sukInputRef.current?.focus(), 80);
+  }, [open, suk]);
+
+  const validateSuk = async () => {
+    const key = sukDraft.trim();
+    if (!key || validating) return;
+    setValidating(true);
+    setSukError("");
+    try {
+      const res = await fetch("/api/validate-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suk: key }),
+      });
+      if (res.ok) {
+        localStorage.setItem("chat-suk", key);
+        setSuk(key);
+        setSukDraft("");
+      } else {
+        setSukError("Incorrect key — please try again.");
+        setSukDraft("");
+        sukInputRef.current?.focus();
+      }
+    } catch {
+      setSukError("Connection error — please try again.");
+    } finally {
+      setValidating(false);
+    }
+  };
 
   const addSource = () => {
     const url = newSourceUrl.trim();
@@ -864,9 +900,16 @@ function AIChatWidget() {
           messages: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
           question: text,
           sources,
+          suk,
         }),
       });
 
+      if (res.status === 401) {
+        localStorage.removeItem("chat-suk");
+        setSuk("");
+        setLoading(false);
+        return;
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
@@ -910,11 +953,13 @@ function AIChatWidget() {
               )}
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setView(v => v === "sources" ? "chat" : "sources")}
-                title="Manage Sources"
-                className={`w-7 h-7 flex items-center justify-center rounded-lg text-sm transition ${view === "sources" ? "bg-[--brand-bg] border border-[--brand-border] text-[--text-primary]" : "text-[--text-muted] hover:text-[--text-primary] hover:bg-white/10"}`}
-              >🔗</button>
+              {suk && (
+                <button
+                  onClick={() => setView(v => v === "sources" ? "chat" : "sources")}
+                  title="Manage Sources"
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg text-sm transition ${view === "sources" ? "bg-[--brand-bg] border border-[--brand-border] text-[--text-primary]" : "text-[--text-muted] hover:text-[--text-primary] hover:bg-white/10"}`}
+                >🔗</button>
+              )}
               <button
                 onClick={() => setOpen(false)}
                 className="w-7 h-7 flex items-center justify-center rounded-lg text-[--text-muted] hover:text-white hover:bg-white/10 transition text-lg leading-none"
@@ -922,8 +967,42 @@ function AIChatWidget() {
             </div>
           </div>
 
+          {/* ── LOCK SCREEN ── */}
+          {!suk && (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
+                style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+                🔐
+              </div>
+              <div className="text-center">
+                <p className="text-[--text-primary] font-semibold text-sm mb-1">System Unlock Key Required</p>
+                <p className="text-[--text-muted] text-xs leading-relaxed">Enter your SUK to access the AI assistant.</p>
+              </div>
+              <div className="w-full space-y-2">
+                <input
+                  ref={sukInputRef}
+                  type="password"
+                  value={sukDraft}
+                  onChange={e => { setSukDraft(e.target.value); setSukError(""); }}
+                  onKeyDown={e => e.key === "Enter" && validateSuk()}
+                  placeholder="Enter SUK here…"
+                  className="w-full bg-white/5 border border-[--card-border] rounded-xl px-3 py-2.5 text-sm text-white placeholder-[--text-muted] focus:outline-none focus:border-[--brand] text-center tracking-widest"
+                />
+                {sukError && <p className="text-red-400 text-xs text-center">{sukError}</p>}
+                <button
+                  onClick={validateSuk}
+                  disabled={validating || !sukDraft.trim()}
+                  className={`w-full ${btnPrimary} py-2.5 rounded-xl font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed`}
+                  style={{ boxShadow: "0 0 14px var(--brand-glow)" }}
+                >
+                  {validating ? "Checking…" : "Unlock"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── CHAT VIEW ── */}
-          {view === "chat" && (
+          {suk && view === "chat" && (
             <>
               <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
                 {messages.length === 0 && (
@@ -992,7 +1071,7 @@ function AIChatWidget() {
           )}
 
           {/* ── SOURCES VIEW ── */}
-          {view === "sources" && (
+          {suk && view === "sources" && (
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="px-4 py-2.5 border-b border-[--card-border] flex-shrink-0">
                 <p className="text-[--text-muted] text-xs leading-relaxed">
