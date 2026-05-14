@@ -53,14 +53,20 @@ const DAY_ABBR  = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 /* ─────────────────────────────────────────────
    ENCODE / DECODE
 ───────────────────────────────────────────── */
-function packData(d) {
-  return { s: d.sod, m: d.md, e: d.eod, t: d.titles, n: d.notes, c: d.schedule, x: d.themeId };
-}
+/* ── Compact URL helpers — strips https:// to save chars, ~ prefix for http:// ── */
+function packUrl(u)   { if (!u) return ""; if (u.startsWith("https://")) return u.slice(8); if (u.startsWith("http://")) return "~" + u.slice(7); return u; }
+function unpackUrl(u) { if (!u) return ""; if (u.startsWith("~")) return "http://" + u.slice(1); return u.includes("://") ? u : "https://" + u; }
+function packTools(arr)   { return (arr || []).map(t => [t.name || "", packUrl(t.url || "")]); }
+function unpackTools(arr) { return (arr || []).map(t => Array.isArray(t) ? { name: t[0] || "", url: unpackUrl(t[1] || "") } : t); }
+
+/* v1 = full backup, v2 = layout only */
+function packData(d)      { return { v:1, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, n: d.notes, c: d.schedule, x: d.themeId }; }
+function packLayout(d)    { return { v:2, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, x: d.themeId }; }
 function unpackData(p) {
   return {
-    sod:      p.s ?? p.sod      ?? [],
-    md:       p.m ?? p.md       ?? [],
-    eod:      p.e ?? p.eod      ?? [],
+    sod:      unpackTools(p.s ?? p.sod      ?? []),
+    md:       unpackTools(p.m ?? p.md       ?? []),
+    eod:      unpackTools(p.e ?? p.eod      ?? []),
     titles:   p.t ?? p.titles   ?? null,
     notes:    p.n ?? p.notes    ?? "",
     schedule: p.c ?? p.schedule ?? {},
@@ -68,20 +74,18 @@ function unpackData(p) {
   };
 }
 
-async function encodeData(data) {
-  const json  = JSON.stringify(packData(data));
+async function compress(packed) {
+  const json = JSON.stringify(packed);
   try {
-    const bytes  = new TextEncoder().encode(json);
-    const cs     = new CompressionStream("deflate-raw");
-    const writer = cs.writable.getWriter();
-    writer.write(bytes); writer.close();
+    const bytes = new TextEncoder().encode(json);
+    const cs = new CompressionStream("deflate-raw");
+    const w = cs.writable.getWriter(); w.write(bytes); w.close();
     const buf = await new Response(cs.readable).arrayBuffer();
-    return btoa(String.fromCharCode(...new Uint8Array(buf)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-  } catch {
-    return btoa(unescape(encodeURIComponent(json))).replace(/=/g, "");
-  }
+    return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+  } catch { return btoa(unescape(encodeURIComponent(json))).replace(/=/g,""); }
 }
+async function encodeData(data)   { return compress(packData(data)); }
+async function encodeLayout(data) { return compress(packLayout(data)); }
 
 async function decodeData(input) {
   const raw  = input.includes("#key=") ? input.split("#key=").pop().trim() : input.trim();
@@ -693,23 +697,28 @@ function Section({ sectionId, title, onTitleChange, tourRef, highlighted }) {
    SHARE MODAL
 ───────────────────────────────────────────── */
 function ShareModal({ getExportData, onClose }) {
-  const [mode,       setMode]       = useState("export");
-  const [importText, setImportText] = useState("");
-  const [copied,     setCopied]     = useState("");
-  const [key,        setKey]        = useState("");
-  const [shareUrl,   setShareUrl]   = useState("");
-  const [generating, setGenerating] = useState(true);
+  const [mode,        setMode]        = useState("export");
+  const [exportTab,   setExportTab]   = useState("layout"); // "layout" | "full"
+  const [importText,  setImportText]  = useState("");
+  const [copied,      setCopied]      = useState("");
+  const [layoutKey,   setLayoutKey]   = useState("");
+  const [fullKey,     setFullKey]     = useState("");
+  const [generating,  setGenerating]  = useState(true);
   const snapshot = readSnapshot();
   const snapshotAge = snapshot ? Math.round((Date.now() - snapshot.at) / 60000) : null;
 
   useEffect(() => {
     (async () => {
-      const k = await encodeData(getExportData());
-      setKey(k);
-      setShareUrl(buildShareUrl(k));
+      const data = getExportData();
+      const [lk, fk] = await Promise.all([encodeLayout(data), encodeData(data)]);
+      setLayoutKey(lk);
+      setFullKey(fk);
       setGenerating(false);
     })();
   }, []);
+
+  const activeKey = exportTab === "layout" ? layoutKey : fullKey;
+  const activeUrl = buildShareUrl(activeKey);
 
   const copy = (text, label) => {
     navigator.clipboard.writeText(text);
@@ -743,14 +752,25 @@ function ShareModal({ getExportData, onClose }) {
 
         {mode === "export" ? (
           <div className="space-y-3">
-            <p className="text-[--text-muted] text-xs">
-              Compressed backup code — paste it on any machine to restore your full setup. Great for onboarding new starters.
+            {/* Layout vs Full toggle */}
+            <div className="flex rounded-xl overflow-hidden border border-[--card-border]">
+              {[["layout","📐 Share Layout"],["full","💾 Full Backup"]].map(([t, label]) => (
+                <button key={t} onClick={() => setExportTab(t)}
+                  className={`flex-1 py-2 text-xs font-medium transition ${exportTab === t ? "bg-[--btn-primary-bg] text-white" : "text-[--text-secondary] hover:text-[--text-primary]"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[--text-muted] text-xs leading-relaxed">
+              {exportTab === "layout"
+                ? "Tools, columns, and theme only — lightweight and easy to send to teammates."
+                : "Everything — tools, notes, schedule, and theme. Use this for a full machine-to-machine restore."}
             </p>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-[--text-muted] text-xs uppercase tracking-widest">Backup Code</label>
+                <label className="text-[--text-muted] text-[10px] uppercase tracking-widest">Code</label>
                 {!generating && (
-                  <span className="text-[10px] text-[--text-muted] opacity-60 tabular-nums">{key.length} chars</span>
+                  <span className="text-[10px] text-[--text-muted] tabular-nums">{activeKey.length} chars</span>
                 )}
               </div>
               {generating ? (
@@ -760,9 +780,9 @@ function ShareModal({ getExportData, onClose }) {
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <input readOnly value={key} onClick={(e) => e.target.select()}
+                  <input readOnly value={activeKey} onClick={(e) => e.target.select()}
                     className="flex-1 bg-white/5 border border-[--card-border] rounded-lg px-2.5 py-2 text-xs text-[--text-secondary] focus:outline-none font-mono truncate" />
-                  <button onClick={() => copy(key, "code")}
+                  <button onClick={() => copy(activeKey, "code")}
                     className={`${btnPrimary} px-3 py-2 rounded-lg text-xs font-medium text-white flex-shrink-0`}>
                     {copied === "code" ? "✓" : "Copy"}
                   </button>
@@ -770,7 +790,7 @@ function ShareModal({ getExportData, onClose }) {
               )}
             </div>
             <button
-              onClick={() => !generating && copy(shareUrl, "url")}
+              onClick={() => !generating && copy(activeUrl, "url")}
               className={`w-full ${btnGhost} py-2.5 rounded-xl text-sm text-[--text-primary] flex items-center justify-center gap-2 ${generating ? "opacity-40 cursor-wait" : ""}`}>
               <span>🔗</span>
               <span>{copied === "url" ? "✓ URL Copied!" : "Copy Share URL"}</span>
