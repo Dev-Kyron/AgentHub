@@ -82,16 +82,14 @@ The following packages are designed for businesses deploying AgentHub to their t
 
 The AI Assistant is powered by Anthropic's Claude Haiku model via a secure server-side proxy. Pricing below reflects estimated **operator API costs** (what it costs you to run), alongside **suggested retail pricing** to clients.
 
-| Package | Agents | Est. API Cost / Month | Suggested Retail / Month | Est. Margin |
-|---|---|---|---|---|
-| **Starter** | 10 agents | ~$10–20 | $50–100 | ~$40–80 |
-| **Growth** | 25 agents | ~$25–50 | $125–200 | ~$100–175 |
-| **Business** | 50 agents | ~$50–100 | $250–400 | ~$200–300 |
-| **Enterprise** | 100 agents | ~$100–200 | $500–1,000 | ~$400–800 |
+| Package | Agents | Monthly Price |
+|---|---|---|
+| **Starter** | 10 agents | $50–100 |
+| **Growth** | 25 agents | $125–200 |
+| **Business** | 50 agents | $250–400 |
+| **Enterprise** | 100 agents | $500–1,000 |
 
-> **Cost estimates** are based on ~20 AI queries per agent per working day (8am–8pm, Monday–Friday), using Claude Haiku 4.5 at $0.80/million input tokens and $4.00/million output tokens.
-
-> **Important:** Costs increase with source-based queries as page content is fetched and included in each request (~2,500 tokens per query with one source vs ~500 tokens without).
+> Pricing is per deployment. Contact for custom enterprise agreements or volume discounts.
 
 ---
 
