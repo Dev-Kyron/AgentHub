@@ -80,7 +80,7 @@ The following packages are designed for businesses deploying AgentHub to their t
 
 ### AI Assistant Packages
 
-The AI Assistant is powered by Anthropic's Claude Haiku model via a secure server-side proxy. Pricing below reflects estimated **operator API costs** (what it costs you to run), alongside **suggested retail pricing** to clients.
+The AI Assistant is powered by a secure server-side AI model. All packages are billed monthly per deployment.
 
 | Package | Agents | Monthly Price |
 |---|---|---|
@@ -116,21 +116,6 @@ The AI Assistant is powered by Anthropic's Claude Haiku model via a secure serve
 
 ---
 
-## Tech Stack
-
-| Layer | Tech |
-|---|---|
-| **Framework** | React 19 (Vite 8) |
-| **Styling** | Tailwind CSS 3 |
-| **AI Model** | Claude Haiku 4.5 (Anthropic) |
-| **API Proxy** | Vercel Serverless Functions (`/api/chat`, `/api/validate-key`) |
-| **Source Fetching** | Jina Reader (`r.jina.ai`) |
-| **Persistence** | Browser LocalStorage — client-side only |
-| **Analytics** | Vercel Analytics |
-| **Deployment** | Vercel |
-
----
-
 ## Getting Started
 
 ### Use It Instantly
@@ -138,67 +123,6 @@ The AI Assistant is powered by Anthropic's Claude Haiku model via a secure serve
 No install required. All core features are available immediately:
 
 [![Launch AgentHub](https://img.shields.io/badge/Launch-AgentHub-7c3aed?style=for-the-badge)](https://agenthub-ecru-five.vercel.app)
-
----
-
-### Run Locally (Core Features Only)
-
-```bash
-git clone https://github.com/Dev-Kyron/AgentHub.git
-cd AgentHub
-npm install
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
----
-
-### Run Locally (With AI Assistant)
-
-The AI Assistant requires a server-side proxy to avoid CORS restrictions. You'll need two terminals running simultaneously.
-
-**1. Copy the environment template and add your keys:**
-
-```bash
-copy .env.local.example .env.local
-```
-
-Edit `.env.local`:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-SUK_KEY=your-system-unlock-key-here
-```
-
-**2. Start the local API server (Terminal 1):**
-
-```bash
-npm run dev:api
-```
-
-**3. Start the Vite dev server (Terminal 2):**
-
-```bash
-npm run dev
-```
-
-> Get an Anthropic API key at [console.anthropic.com](https://console.anthropic.com)
-
----
-
-### Deploy to Vercel
-
-1. Push the repository to GitHub
-2. Import the project in Vercel
-3. Add the following **Environment Variables** in Vercel project settings:
-
-| Variable | Value |
-|---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-| `SUK_KEY` | Your chosen system unlock key |
-
-4. Deploy — Vercel handles the serverless functions automatically
 
 ---
 
