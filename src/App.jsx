@@ -914,6 +914,10 @@ function AIChatWidget() {
     setInput("");
     setLoading(true);
 
+    // Add placeholder immediately so thinking bubble shows during source fetch + API call
+    const placeholder = { role: "assistant", content: "", ts: Date.now(), searching: sources.length > 0 };
+    setMessages([...newHistory, placeholder]);
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -936,10 +940,6 @@ function AIChatWidget() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
-
-      // Add placeholder bubble — typing dots show until first token arrives
-      const placeholder = { role: "assistant", content: "", ts: Date.now(), searching: sources.length > 0 };
-      setMessages([...newHistory, placeholder]);
 
       // Read the SSE stream and append tokens as they arrive
       const reader  = res.body.getReader();
