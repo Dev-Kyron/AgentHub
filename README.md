@@ -109,6 +109,75 @@ The AI Assistant is powered by a secure server-side AI model. All packages are b
 
 ---
 
+## Hosting, Security & IT Overview
+
+> Technical overview for IT departments, compliance reviews, and enterprise onboarding.
+
+### Hosting & Infrastructure
+
+- Hosted on Vercel — serverless, globally distributed, auto-scaling. No servers to manage.
+- Domain: `agenthub.solutions` — custom domain with SSL, auto-renewed.
+- Deployment: GitHub pushes auto-deploy with zero downtime updates.
+- Vercel hobby tier has no SLA. For guaranteed uptime (99.9%+), Vercel Pro (~$20/month) would be required.
+
+### Security
+
+- API keys never touch the browser and are stored only in Vercel environment variables.
+- SUK validation happens server-side on every request.
+- No database is used — no user data is stored server-side.
+- All agent data remains in the browser localStorage on the agent's own machine.
+- AI queries are proxied through serverless functions rather than directly from the browser.
+- Anthropic API data is not used for model training by default.
+- HTTPS is enforced by Vercel.
+
+### Data & Privacy
+
+- No logins, accounts, analytics, or user tracking.
+- Bookmarklet captures content locally into the clipboard only.
+- Content is only sent once the user explicitly pastes it into AgentHub.
+- Fetched company URLs are processed temporarily and not stored.
+- Jina Reader briefly processes external content server-side for URL fetching.
+
+### Access Control
+
+- Each client receives a unique SUK key.
+- Access revocation is immediate by removing the key from Vercel.
+- No shared credentials exist between companies.
+
+### Integration & IT Requirements
+
+- Runs entirely in the browser with no installation required.
+- No VPN changes or firewall rules needed.
+- Bookmarklet requires standard browser clipboard permissions.
+- IT teams can deploy bookmarklets centrally via browser management tools.
+- Works alongside existing CRMs, phone systems, and internal tools.
+
+### Operational Dependencies
+
+- Anthropic outages may temporarily disable AI functionality while core productivity tools continue working.
+- If Jina Reader becomes unavailable, URL fetching may fail while bookmarklet workflows continue working.
+- Internal intranet pages behind VPNs are not accessible to Jina Reader.
+
+### Current Limitations
+
+- No audit logs are currently available.
+- Custom AI model support is not currently available.
+- Self-hosted deployments are technically possible but not currently offered as a packaged solution.
+
+### Frequently Asked IT Questions
+
+| Question | Answer |
+|---|---|
+| Where is data stored? | Agent browser only. Nothing stored server-side. |
+| Who has access to the AI API key? | Only the platform administrator via Vercel dashboard access. |
+| Can we use our own AI model? | Not currently — Claude only. Custom model support is on the roadmap. |
+| Can we host it ourselves? | Possible, but not currently offered as a packaged deployment. |
+| What happens if we cancel? | The SUK can be revoked instantly to disable access. |
+| Is there an audit trail? | Not yet. Planned roadmap feature. |
+| Can IT push the bookmarklet company-wide? | Yes — deployable using standard browser management policies. |
+
+---
+
 ## Security & Privacy
 
 | Concern | How AgentHub Handles It |
