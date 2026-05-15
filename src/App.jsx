@@ -58,10 +58,13 @@ function packUrl(u)   { if (!u) return ""; if (u.startsWith("https://")) return 
 function unpackUrl(u) { if (!u) return ""; if (u.startsWith("~")) return "http://" + u.slice(1); return u.includes("://") ? u : "https://" + u; }
 function packTools(arr)   { return (arr || []).map(t => [t.name || "", packUrl(t.url || "")]); }
 function unpackTools(arr) { return (arr || []).map(t => Array.isArray(t) ? { name: t[0] || "", url: unpackUrl(t[1] || "") } : t); }
+/* AI sources — strip captured content to keep code small; recipient re-captures if needed */
+function packSources(arr) { return (arr || []).filter(s => s.url).map(s => [packUrl(s.url), s.label || ""]); }
+function unpackSources(arr) { return (arr || []).map(s => Array.isArray(s) ? { url: unpackUrl(s[0] || ""), label: s[1] || "" } : s); }
 
 /* v1 = full backup, v2 = layout only */
-function packData(d)      { return { v:1, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, n: d.notes, c: d.schedule, x: d.themeId }; }
-function packLayout(d)    { return { v:2, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, x: d.themeId }; }
+function packData(d)      { return { v:1, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, n: d.notes, c: d.schedule, x: d.themeId, r: packSources(d.sources) }; }
+function packLayout(d)    { return { v:2, s: packTools(d.sod), m: packTools(d.md), e: packTools(d.eod), t: d.titles, x: d.themeId, r: packSources(d.sources) }; }
 function unpackData(p) {
   return {
     sod:      unpackTools(p.s ?? p.sod      ?? []),
@@ -71,6 +74,7 @@ function unpackData(p) {
     notes:    p.n ?? p.notes    ?? "",
     schedule: p.c ?? p.schedule ?? {},
     themeId:  p.x ?? p.themeId  ?? "concentrix",
+    sources:  unpackSources(p.r ?? p.sources ?? []),
   };
 }
 
@@ -785,6 +789,7 @@ function ShareModal({ getExportData, onClose }) {
     if (parsed.eod      !== undefined) localStorage.setItem("tools-eod",      JSON.stringify(parsed.eod));
     if (parsed.notes    !== undefined) localStorage.setItem("notes",          parsed.notes ?? "");
     if (parsed.schedule !== undefined) localStorage.setItem("schedule",       JSON.stringify(parsed.schedule ?? {}));
+    if (parsed.sources  !== undefined && parsed.sources.length) localStorage.setItem("chat-sources", JSON.stringify(parsed.sources));
     if (parsed.titles   !== undefined) localStorage.setItem("section-titles", JSON.stringify(parsed.titles));
     if (parsed.themeId  !== undefined) localStorage.setItem("themeId",        parsed.themeId);
     location.reload();
@@ -1593,13 +1598,14 @@ export default function App() {
   const isTour = (id) => tourActive && currentStep?.id === id;
 
   const getExportData = () => ({
-    sod:      JSON.parse(localStorage.getItem("tools-sod")  || "[]"),
-    md:       JSON.parse(localStorage.getItem("tools-md")   || "[]"),
-    eod:      JSON.parse(localStorage.getItem("tools-eod")  || "[]"),
+    sod:      JSON.parse(localStorage.getItem("tools-sod")    || "[]"),
+    md:       JSON.parse(localStorage.getItem("tools-md")     || "[]"),
+    eod:      JSON.parse(localStorage.getItem("tools-eod")    || "[]"),
     titles:   sectionTitles,
     notes,
-    schedule: JSON.parse(localStorage.getItem("schedule")   || "{}"),
+    schedule: JSON.parse(localStorage.getItem("schedule")     || "{}"),
     themeId,
+    sources:  JSON.parse(localStorage.getItem("chat-sources") || "[]"),
   });
 
   const bootUpMyDay = () => {
