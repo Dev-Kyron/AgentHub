@@ -88,7 +88,17 @@ async function encodeData(data)   { return compress(packData(data)); }
 async function encodeLayout(data) { return compress(packLayout(data)); }
 
 async function decodeData(input) {
-  const raw  = input.includes("#key=") ? input.split("#key=").pop().trim() : input.trim();
+  let raw = input.trim();
+  // Resolve short links (e.g. is.gd) via server proxy
+  if (/^https?:\/\/(?!agenthub\.solutions)/.test(raw) && !raw.includes("?key=") && !raw.includes("#key=")) {
+    try {
+      const r = await fetch(`/api/resolve?url=${encodeURIComponent(raw)}`);
+      const { resolved } = await r.json();
+      if (resolved) raw = resolved;
+    } catch {}
+  }
+  if (raw.includes("?key=")) raw = raw.split("?key=").pop().split("&")[0].trim();
+  else if (raw.includes("#key=")) raw = raw.split("#key=").pop().trim();
   const b64  = raw.replace(/-/g, "+").replace(/_/g, "/");
   const pad  = (4 - (b64.length % 4)) % 4;
   const b64p = b64 + "=".repeat(pad);
@@ -107,7 +117,7 @@ async function decodeData(input) {
 }
 
 function buildShareUrl(key) {
-  return `${window.location.origin}${window.location.pathname}#key=${key}`;
+  return `${window.location.origin}${window.location.pathname}?key=${key}`;
 }
 
 /* ─────────────────────────────────────────────
@@ -805,66 +815,57 @@ function ShareModal({ getExportData, onClose }) {
             </div>
             <p className="text-[--text-muted] text-xs leading-relaxed">
               {exportTab === "layout"
-                ? "Tools, columns, and theme only — lightweight and easy to send to teammates."
-                : "Everything — tools, notes, schedule, and theme. Use this for a full machine-to-machine restore."}
+                ? "Tools, columns & theme only — small and easy to send."
+                : "Full backup — tools, notes, schedule & theme. Use for machine-to-machine restores."}
             </p>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[--text-muted] text-[10px] uppercase tracking-widest">Code</label>
-                {!generating && (
-                  <span className="text-[10px] text-[--text-muted] tabular-nums">{activeKey.length} chars</span>
-                )}
+
+            {/* Code row */}
+            {generating ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-white/5 border border-[--card-border] rounded-xl">
+                <div className="w-3 h-3 border-2 border-white/20 border-t-[--brand-light] rounded-full animate-spin flex-shrink-0" />
+                <span className="text-xs text-[--text-muted]">Compressing…</span>
               </div>
-              {generating ? (
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-white/5 border border-[--card-border] rounded-lg">
-                  <div className="w-3 h-3 border-2 border-white/20 border-t-[--brand-light] rounded-full animate-spin flex-shrink-0" />
-                  <span className="text-xs text-[--text-muted]">Compressing…</span>
-                </div>
-              ) : (
+            ) : (
+              <div className="space-y-1">
                 <div className="flex gap-2">
                   <input readOnly value={activeKey} onClick={(e) => e.target.select()}
-                    className="flex-1 bg-white/5 border border-[--card-border] rounded-lg px-2.5 py-2 text-xs text-[--text-secondary] focus:outline-none font-mono truncate" />
+                    className="flex-1 bg-white/5 border border-[--card-border] rounded-xl px-3 py-2 text-xs text-[--text-secondary] focus:outline-none font-mono truncate" />
                   <button onClick={() => copy(activeKey, "code")}
-                    className={`${btnPrimary} px-3 py-2 rounded-lg text-xs font-medium text-white flex-shrink-0`}>
+                    className={`${btnPrimary} px-4 py-2 rounded-xl text-xs font-semibold text-white flex-shrink-0`}>
                     {copied === "code" ? "✓" : "Copy"}
                   </button>
                 </div>
-              )}
-            </div>
-            <button
-              onClick={() => !generating && copy(activeUrl, "url")}
-              className={`w-full ${btnGhost} py-2.5 rounded-xl text-sm text-[--text-primary] flex items-center justify-center gap-2 ${generating ? "opacity-40 cursor-wait" : ""}`}>
-              <span>🔗</span>
-              <span>{copied === "url" ? "✓ URL Copied!" : "Copy Share URL"}</span>
-            </button>
+                <p className="text-[10px] text-[--text-muted] text-right tabular-nums">{activeKey.length} chars</p>
+              </div>
+            )}
 
             {/* Short link */}
-            <div className="space-y-1.5">
+            <div className="space-y-2 pt-1">
               <button
                 onClick={() => !generating && !shortening && getShortLink()}
-                className={`w-full ${btnPrimary} py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 ${generating || shortening ? "opacity-60 cursor-wait" : ""}`}>
+                disabled={generating || shortening}
+                className={`w-full ${btnPrimary} py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50`}>
                 <span>⚡</span>
-                <span>{shortening ? "Generating…" : copied === "short" ? "✓ Copied!" : "Get Short Link"}</span>
+                <span>{shortening ? "Generating…" : copied === "short" ? "✓ Copied to clipboard!" : "Get Short Link — for Teams & Chat"}</span>
               </button>
               {shortUrl && (
-                <div className="flex items-center gap-2 bg-white/5 border border-[--brand-border] rounded-xl px-3 py-2"
-                  style={{ boxShadow: "0 0 10px var(--brand-glow)" }}>
-                  <span className="flex-1 text-[--brand] text-sm font-mono font-semibold truncate">{shortUrl}</span>
+                <div className="flex items-center gap-3 bg-white/5 border border-[--brand-border] rounded-xl px-4 py-2.5"
+                  style={{ boxShadow: "0 0 14px var(--brand-glow)" }}>
+                  <span className="flex-1 text-[--brand] font-mono font-bold text-sm truncate">{shortUrl}</span>
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl); setCopied("short"); }}
-                    className="text-[10px] text-[--text-muted] hover:text-white transition flex-shrink-0">
+                    className={`${btnPrimary} px-3 py-1 rounded-lg text-xs font-semibold text-white flex-shrink-0`}>
                     {copied === "short" ? "✓" : "Copy"}
                   </button>
                 </div>
               )}
-              <p className="text-[--text-muted] text-[10px] text-center">Perfect for sharing over Teams or chat</p>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-[--text-muted] text-xs">Paste a backup code or full share URL to restore your setup.</p>
+            <p className="text-[--text-muted] text-xs leading-relaxed">Paste a backup code, share URL, or short link (e.g. <span className="text-[--text-secondary]">is.gd/xxxxx</span>) to restore your setup.</p>
             <textarea value={importText} onChange={(e) => setImportText(e.target.value)}
-              placeholder="Paste code or share URL here…" rows={4}
-              className="w-full bg-white/5 border border-[--card-border] rounded-lg px-3 py-2 text-xs text-[--text-secondary] placeholder-[--text-muted] focus:outline-none focus:border-[--brand] resize-none font-mono" />
+              placeholder="Paste code, URL, or short link…" rows={4}
+              className="w-full bg-white/5 border border-[--card-border] rounded-xl px-3 py-2 text-xs text-[--text-secondary] placeholder-[--text-muted] focus:outline-none focus:border-[--brand] resize-none font-mono" />
             <button onClick={handleImport}
               className={`w-full ${btnPrimary} py-2.5 rounded-xl font-medium text-white`}>
               Import & Reload
@@ -1537,7 +1538,9 @@ export default function App() {
     : `hue-rotate(${theme.hueRotate}deg) saturate(${theme.grayscale ? 0 : 1.1}) ${theme.grayscale ? "grayscale(1)" : ""}`.trim();
 
   useEffect(() => {
-    if (window.location.hash.startsWith("#key=")) {
+    const params = new URLSearchParams(window.location.search);
+    const inboundKey = params.get("key") || (window.location.hash.startsWith("#key=") ? window.location.hash.slice(5) : null);
+    if (inboundKey) {
       setShowShare(true);
       window.history.replaceState(null, "", window.location.pathname);
     }
