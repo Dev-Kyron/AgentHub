@@ -732,6 +732,8 @@ function ShareModal({ getExportData, onClose }) {
   const [layoutKey,   setLayoutKey]   = useState("");
   const [fullKey,     setFullKey]     = useState("");
   const [generating,  setGenerating]  = useState(true);
+  const [shortUrl,    setShortUrl]    = useState("");
+  const [shortening,  setShortening]  = useState(false);
   const snapshot = readSnapshot();
   const snapshotAge = snapshot ? Math.round((Date.now() - snapshot.at) / 60000) : null;
 
@@ -747,6 +749,18 @@ function ShareModal({ getExportData, onClose }) {
 
   const activeKey = exportTab === "layout" ? layoutKey : fullKey;
   const activeUrl = buildShareUrl(activeKey);
+
+  const getShortLink = async () => {
+    setShortening(true);
+    setShortUrl("");
+    try {
+      const r = await fetch(`/api/shorten?url=${encodeURIComponent(activeUrl)}`);
+      const { short } = await r.json();
+      setShortUrl(short || "");
+      if (short) { navigator.clipboard.writeText(short); setCopied("short"); }
+    } catch { setShortUrl(""); }
+    setShortening(false);
+  };
 
   const copy = (text, label) => {
     navigator.clipboard.writeText(text);
@@ -783,7 +797,7 @@ function ShareModal({ getExportData, onClose }) {
             {/* Layout vs Full toggle */}
             <div className="flex rounded-xl overflow-hidden border border-[--card-border]">
               {[["layout","📐 Share Layout"],["full","💾 Full Backup"]].map(([t, label]) => (
-                <button key={t} onClick={() => setExportTab(t)}
+                <button key={t} onClick={() => { setExportTab(t); setShortUrl(""); }}
                   className={`flex-1 py-2 text-xs font-medium transition ${exportTab === t ? "bg-[--btn-primary-bg] text-white" : "text-[--text-secondary] hover:text-[--text-primary]"}`}>
                   {label}
                 </button>
@@ -823,6 +837,27 @@ function ShareModal({ getExportData, onClose }) {
               <span>🔗</span>
               <span>{copied === "url" ? "✓ URL Copied!" : "Copy Share URL"}</span>
             </button>
+
+            {/* Short link */}
+            <div className="space-y-1.5">
+              <button
+                onClick={() => !generating && !shortening && getShortLink()}
+                className={`w-full ${btnPrimary} py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 ${generating || shortening ? "opacity-60 cursor-wait" : ""}`}>
+                <span>⚡</span>
+                <span>{shortening ? "Generating…" : copied === "short" ? "✓ Copied!" : "Get Short Link"}</span>
+              </button>
+              {shortUrl && (
+                <div className="flex items-center gap-2 bg-white/5 border border-[--brand-border] rounded-xl px-3 py-2"
+                  style={{ boxShadow: "0 0 10px var(--brand-glow)" }}>
+                  <span className="flex-1 text-[--brand] text-sm font-mono font-semibold truncate">{shortUrl}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(shortUrl); setCopied("short"); }}
+                    className="text-[10px] text-[--text-muted] hover:text-white transition flex-shrink-0">
+                    {copied === "short" ? "✓" : "Copy"}
+                  </button>
+                </div>
+              )}
+              <p className="text-[--text-muted] text-[10px] text-center">Perfect for sharing over Teams or chat</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
